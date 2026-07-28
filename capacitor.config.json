@@ -1,0 +1,11 @@
+{
+  "appId": "com.example.webgpushell",
+  "appName": "WebGPU Shell",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "ios": {
+    "contentInset": "automatic"
+  }
+}
