@@ -6,6 +6,9 @@
     "androidScheme": "https"
   },
   "ios": {
-    "contentInset": "automatic"
+    "contentInset": "never",
+    "preferredContentMode": "mobile",
+    "backgroundColor": "#0b1020",
+    "scrollEnabled": false
   }
 }

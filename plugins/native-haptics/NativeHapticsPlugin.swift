@@ -100,29 +100,7 @@ public class NativeHapticsPlugin: CAPPlugin, CAPBridgedPlugin {
         impactHeavy.prepare()
     }
 
-    private func boostTransientIntensity(_ value: Float) -> Float {
-        let v = clamp01(value)
-        guard v > 0 else { return 0 }
-        return clamp01(0.18 + powf(v, 0.72) * 0.82)
-    }
-
-    private func boostTransientSharpness(_ value: Float) -> Float {
-        let v = clamp01(value)
-        guard v > 0 else { return 0 }
-        return clamp01(0.08 + powf(v, 0.82) * 0.92)
-    }
-
-    private func boostContinuousIntensity(_ value: Float) -> Float {
-        let v = clamp01(value)
-        guard v > 0 else { return 0 }
-        return clamp01(0.10 + powf(v, 0.78) * 0.90)
-    }
-
-    private func boostContinuousSharpness(_ value: Float) -> Float {
-        let v = clamp01(value)
-        guard v > 0 else { return 0 }
-        return clamp01(0.05 + powf(v, 0.88) * 0.95)
-    }
+    // 强度/锐度：仅 clamp 到 [0,1]，不做 boost / 多事件合成；JS 填多少 CH 就用多少。
 
     private func ensureEngineStarted() throws {
         guard supportsCoreHaptics else { return }
@@ -150,44 +128,22 @@ public class NativeHapticsPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func playTransient(intensity: Float, sharpness: Float) {
-        let boostedIntensity = boostTransientIntensity(intensity)
-        let boostedSharpness = boostTransientSharpness(sharpness)
+        let i = clamp01(intensity)
+        let s = clamp01(sharpness)
         if supportsCoreHaptics {
             do {
                 try ensureEngineStarted()
                 if let engine {
-                    var events: [CHHapticEvent] = [
-                        CHHapticEvent(
-                            eventType: .hapticTransient,
-                            parameters: [
-                                CHHapticEventParameter(parameterID: .hapticIntensity, value: boostedIntensity),
-                                CHHapticEventParameter(parameterID: .hapticSharpness, value: boostedSharpness)
-                            ],
-                            relativeTime: 0
-                        ),
-                        CHHapticEvent(
-                            eventType: .hapticTransient,
-                            parameters: [
-                                CHHapticEventParameter(parameterID: .hapticIntensity, value: clamp01(boostedIntensity * 0.72)),
-                                CHHapticEventParameter(parameterID: .hapticSharpness, value: clamp01(boostedSharpness * 0.92))
-                            ],
-                            relativeTime: 0.03
-                        )
-                    ]
-                    if boostedIntensity > 0.35 {
-                        events.append(
-                            CHHapticEvent(
-                                eventType: .hapticContinuous,
-                                parameters: [
-                                    CHHapticEventParameter(parameterID: .hapticIntensity, value: clamp01(boostedIntensity * 0.28)),
-                                    CHHapticEventParameter(parameterID: .hapticSharpness, value: clamp01(boostedSharpness * 0.65))
-                                ],
-                                relativeTime: 0,
-                                duration: 0.045
-                            )
-                        )
-                    }
-                    let pattern = try CHHapticPattern(events: events, parameters: [])
+                    // 单次瞬态，参数直通（仅 clamp01）
+                    let event = CHHapticEvent(
+                        eventType: .hapticTransient,
+                        parameters: [
+                            CHHapticEventParameter(parameterID: .hapticIntensity, value: i),
+                            CHHapticEventParameter(parameterID: .hapticSharpness, value: s)
+                        ],
+                        relativeTime: 0
+                    )
+                    let pattern = try CHHapticPattern(events: [event], parameters: [])
                     let player = try engine.makePlayer(with: pattern)
                     try player.start(atTime: CHHapticTimeImmediate)
                     return
@@ -197,12 +153,12 @@ public class NativeHapticsPlugin: CAPPlugin, CAPBridgedPlugin {
             }
         }
 
-        playTransientFallback(intensity: boostedIntensity)
+        playTransientFallback(intensity: i)
     }
 
     private func startContinuous(intensity: Float, sharpness: Float) {
-        let boostedIntensity = boostContinuousIntensity(intensity)
-        let boostedSharpness = boostContinuousSharpness(sharpness)
+        let i = clamp01(intensity)
+        let s = clamp01(sharpness)
         guard supportsCoreHaptics else { return }
         do {
             try ensureEngineStarted()
@@ -210,8 +166,8 @@ public class NativeHapticsPlugin: CAPPlugin, CAPBridgedPlugin {
                 let event = CHHapticEvent(
                     eventType: .hapticContinuous,
                     parameters: [
-                        CHHapticEventParameter(parameterID: .hapticIntensity, value: boostedIntensity),
-                        CHHapticEventParameter(parameterID: .hapticSharpness, value: boostedSharpness)
+                        CHHapticEventParameter(parameterID: .hapticIntensity, value: i),
+                        CHHapticEventParameter(parameterID: .hapticSharpness, value: s)
                     ],
                     relativeTime: 0,
                     duration: 30.0
@@ -221,8 +177,8 @@ public class NativeHapticsPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             try suctionPlayer?.start(atTime: CHHapticTimeImmediate)
             try suctionPlayer?.sendParameters([
-                CHHapticDynamicParameter(parameterID: .hapticIntensityControl, value: boostedIntensity, relativeTime: 0),
-                CHHapticDynamicParameter(parameterID: .hapticSharpnessControl, value: boostedSharpness, relativeTime: 0)
+                CHHapticDynamicParameter(parameterID: .hapticIntensityControl, value: i, relativeTime: 0),
+                CHHapticDynamicParameter(parameterID: .hapticSharpnessControl, value: s, relativeTime: 0)
             ], atTime: CHHapticTimeImmediate)
         } catch {
             suctionPlayer = nil
@@ -230,8 +186,8 @@ public class NativeHapticsPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func updateContinuous(intensity: Float, sharpness: Float) {
-        let boostedIntensity = boostContinuousIntensity(intensity)
-        let boostedSharpness = boostContinuousSharpness(sharpness)
+        let i = clamp01(intensity)
+        let s = clamp01(sharpness)
         guard supportsCoreHaptics else { return }
         do {
             try ensureEngineStarted()
@@ -240,8 +196,8 @@ public class NativeHapticsPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             try suctionPlayer?.sendParameters([
-                CHHapticDynamicParameter(parameterID: .hapticIntensityControl, value: boostedIntensity, relativeTime: 0),
-                CHHapticDynamicParameter(parameterID: .hapticSharpnessControl, value: boostedSharpness, relativeTime: 0)
+                CHHapticDynamicParameter(parameterID: .hapticIntensityControl, value: i, relativeTime: 0),
+                CHHapticDynamicParameter(parameterID: .hapticSharpnessControl, value: s, relativeTime: 0)
             ], atTime: CHHapticTimeImmediate)
         } catch {
             suctionPlayer = nil
@@ -260,17 +216,19 @@ public class NativeHapticsPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func playTransientFallback(intensity: Float) {
+        // 无 Core Haptics 时：UIKit 强度直通 [0,1]，不抬底
+        let i = CGFloat(clamp01(intensity))
         if intensity >= 0.7 {
-            impactHeavy.impactOccurred(intensity: CGFloat(max(0.85, intensity)))
+            impactHeavy.impactOccurred(intensity: i)
             impactHeavy.prepare()
             return
         }
         if intensity >= 0.42 {
-            impactRigid.impactOccurred(intensity: CGFloat(max(0.65, intensity)))
+            impactRigid.impactOccurred(intensity: i)
             impactRigid.prepare()
             return
         }
-        impactSoft.impactOccurred(intensity: CGFloat(max(0.2, intensity)))
+        impactSoft.impactOccurred(intensity: max(0.01, i))
         impactSoft.prepare()
     }
 }

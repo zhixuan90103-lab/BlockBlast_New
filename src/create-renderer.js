@@ -1,5 +1,10 @@
+/**
+ * WebGPU 渲染器：挂到 #stage，尺寸跟 #phone-frame（getFrameSize），禁止裸用整窗。
+ * @see docs/ENGINEERING.md §5
+ */
 import * as THREE from 'three';
 import * as THREE_WEBGPU from 'three/webgpu';
+import { getFrameSize } from './viewport.js';
 
 const { WebGPURenderer } = THREE_WEBGPU;
 
@@ -16,10 +21,9 @@ export function showFatal(title, message) {
 }
 
 /**
- * Create a WebGPU renderer. No silent WebGL fallback — shell is WebGPU-first.
- * Games can later opt into forceWebGL if needed.
+ * Create a WebGPU renderer sized to #phone-frame (not the full desktop window).
  */
-export async function createRenderer({ antialias = true } = {}) {
+export async function createRenderer({ antialias = true, container } = {}) {
   if (!navigator.gpu) {
     showFatal(
       'WebGPU 不可用',
@@ -28,6 +32,7 @@ export async function createRenderer({ antialias = true } = {}) {
     throw new Error('WebGPU unavailable');
   }
 
+  const host = container || document.getElementById('stage') || document.body;
   const renderer = new WebGPURenderer({ antialias });
   try {
     await renderer.init();
@@ -38,9 +43,29 @@ export async function createRenderer({ antialias = true } = {}) {
 
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   renderer.setPixelRatio(dpr);
-  renderer.setSize(window.innerWidth, window.innerHeight);
+
+  const { width, height } = getFrameSize();
+  renderer.setSize(width, height, false);
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.toneMappingExposure = 1.1;
-  document.body.appendChild(renderer.domElement);
+
+  const canvas = renderer.domElement;
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
+  host.appendChild(canvas);
+
   return renderer;
+}
+
+/** Resize renderer + camera to the current phone-frame CSS size. */
+export function resizeToFrame(renderer, camera) {
+  const { width, height } = getFrameSize();
+  if (width < 2 || height < 2) return { width, height };
+
+  if (camera) {
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+  }
+  renderer.setSize(width, height, false);
+  return { width, height };
 }

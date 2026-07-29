@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Reusable Three.js + WebGPU + Capacitor iOS shell with NativeHaptics plugin",
+  "description": "Reusable Three.js + WebGPU + Capacitor iOS shell with NativeHaptics. Docs: AGENTS.md, docs/ENGINEERING.md",
+  "homepage": "./AGENTS.md",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

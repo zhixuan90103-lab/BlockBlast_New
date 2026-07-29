@@ -1,6 +1,21 @@
 # NativeHaptics（iOS Core Haptics）
 
-从拼豆 Studio 抽离的可复用 Capacitor 本地插件。
+本底座内置的 Capacitor 本地震动插件。
+
+**工程总览：** [../../AGENTS.md](../../AGENTS.md) · [../../docs/ENGINEERING.md](../../docs/ENGINEERING.md)
+
+## 真源
+
+| 文件 | 作用 |
+|------|------|
+| `NativeHapticsPlugin.swift` | Core Haptics + UIKit fallback |
+| `BridgeViewController.swift` | `registerPluginInstance(NativeHapticsPlugin())` |
+
+运行时副本在 `ios/App/App/`。**改插件请改本目录**，再执行：
+
+```bash
+npm run ios:bootstrap
+```
 
 ## JS API
 
@@ -15,13 +30,15 @@ await haptics.updateContinuous({ intensity: 0.4, sharpness: 0.3 });
 await haptics.stopContinuous();
 ```
 
-## 原生侧
+`intensity` / `sharpness` 仅 **clamp 到 [0,1]** 后直通 Core Haptics（单次 transient，无 boost、无双脉冲合成）。
 
-- `NativeHapticsPlugin.swift` — Core Haptics + UIKit fallback
-- `BridgeViewController.swift` — 手动 `registerPluginInstance`
+| 环境 | 行为 |
+|------|------|
+| iOS App | Core Haptics / Impact 回退 |
+| 桌面 / 浏览器 | `{ ok: false, reason: 'not_native_ios' }` |
 
-接入：
+## 注册链
 
-```bash
-npm run ios:bootstrap
-```
+`Main.storyboard` → `BridgeViewController` → `capacitorDidLoad` → 插件实例。
+
+Storyboard 必须是 `customClass="BridgeViewController" customModule="App"`（bootstrap 会写）。

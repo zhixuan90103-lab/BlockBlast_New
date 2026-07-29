@@ -1,9 +1,13 @@
+/**
+ * 通用震动桥（无业务曲线）。原生真源：plugins/native-haptics/。
+ * 仅 iOS App 生效；浏览器 → not_native_ios。
+ * @see plugins/native-haptics/README.md · docs/ENGINEERING.md §6
+ */
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
 /**
  * Low-level bridge to the custom iOS Core Haptics plugin.
- * Game-specific patterns (suck / place / iron…) should live in each product,
- * not in this shell.
+ * Game-specific haptic rhythms belong in product code, not this shell.
  *
  * Plugin methods (iOS):
  * - prepare()

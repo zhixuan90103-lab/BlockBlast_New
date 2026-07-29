@@ -1,128 +1,128 @@
 # three-webgpu-cap-shell
 
-可复用的 **Three.js + WebGPU + Vite + Capacitor iOS** 基础外壳，内置自研 **NativeHaptics**（Core Haptics）插件。
+**可复用基础外壳**：Three.js + **WebGPU** + Vite + **Capacitor iOS** + 自研 **NativeHaptics**。
 
-从拼豆 Studio / craftlinks 技术栈沉淀：只保留「能 dev、能打包、能真机、能震动」的骨架，不带具体玩法。
-
----
-
-## 目录
-
-```
-three-webgpu-cap-shell/
-├── src/
-│   ├── main.js              # 最小 WebGPU 场景 + 震动测试 UI
-│   ├── create-renderer.js   # WebGPURenderer 初始化
-│   └── native-haptics.js    # JS 侧通用震动 API
-├── plugins/native-haptics/  # iOS Swift 插件源文件
-├── scripts/bootstrap-ios.mjs
-├── capacitor.config.json
-├── vite.config.js           # base: './' 适配 Capacitor
-└── package.json
-```
+桌面预览使用 **手机比例框（393×852）**，UI 预留 **灵动岛 / Home 条** 安全区；真机 App 全屏 + 系统 Safe Area。
 
 ---
 
-## 1. Web 开发
+## 文档入口（请按角色阅读）
+
+| 文档 | 给谁 | 内容 |
+|------|------|------|
+| **[AGENTS.md](./AGENTS.md)** | AI / 任意新编辑窗口 | 一页纸：入口地图、硬性约定 |
+| **[docs/ENTRYPOINTS.md](./docs/ENTRYPOINTS.md)** | 查「从哪启动」 | 命令 / DOM / Web 调用链 / iOS 链 |
+| **[docs/ENGINEERING.md](./docs/ENGINEERING.md)** | 维护者 | 设计决策、配置表、震动、踩坑 |
+| **[plugins/native-haptics/README.md](./plugins/native-haptics/README.md)** | 只接震动 | JS API + 注入方式 |
+| **本 README** | 人类上手 | 安装、dev、真机三步 |
+
+> 新会话 / 新同事：**先读 AGENTS.md**，再按需下钻 ENGINEERING。
+
+---
+
+## 本机路径
+
+```text
+/Users/wangzhixuan/Documents/Threejs_Work/Project_基础/three-webgpu-cap-shell
+```
+
+父目录 `Project_基础` 用于「基础脚手架」；**真正工程根是本文件夹**。
+
+---
+
+## 30 秒上手
 
 ```bash
 cd three-webgpu-cap-shell
 npm install
 npm run dev
-# 默认 http://127.0.0.1:5190/
+# → http://127.0.0.1:5190/
 ```
 
-改 `src/main.js` 即可换成你的游戏逻辑；保留 `create-renderer.js` 与 `native-haptics.js`。
+应看到：居中竖屏手机框、紫色立方体、顶部状态（含 safe 数值）、底部震动测试按钮。
 
 ---
 
-## 2. 变成你自己的项目
+## 代码入口（最短）
+
+```text
+index.html
+  └─ src/main.js                 ← 业务/demo 从这里改
+       ├─ src/viewport.js        ← 手机框 + native + safe
+       ├─ src/create-renderer.js ← WebGPU
+       └─ src/native-haptics.js  ← 震动 JS
+```
+
+DOM 约定（勿拆）：
+
+```text
+#letterbox > #phone-frame > (#stage | #hud)
+```
+
+- `#stage`：3D canvas  
+- `#hud`：所有 UI（自动避开灵动岛区域）
+
+---
+
+## iOS 真机
 
 ```bash
-# 若从本仓库复制出去
-rm -rf .git
-git init
-git add .
-git commit -m "init from three-webgpu-cap-shell"
+# 首次（或插件/工程损坏时）
+npm run ios:bootstrap
+npm run cap:open
 
-# 改 App 标识
-# capacitor.config.json → appId / appName
+# 日常
+npm run cap:sync    # build + sync
+# Xcode：Team → 真机 → Run
 ```
+
+| 配置点 | 位置 |
+|--------|------|
+| Bundle ID / 名 | `capacitor.config.json` → `appId` / `appName` |
+| 相对资源路径 | `vite.config.js` → `base: './'` |
+| 无双重 Safe Area | `ios.contentInset: "never"` |
+| 震动原生真源 | `plugins/native-haptics/*.swift` |
+
+占位 ID：`com.example.webgpushell` —— 长期开发请改成自己的。
 
 ---
 
-## 3. Capacitor iOS（含震动插件 + 真机）
+## npm scripts
 
-### 首次（推荐一条命令）
-
-```bash
-npm install
-npm run ios:bootstrap   # build + cap add ios（如需）+ 注入 NativeHaptics + cap sync
-npm run cap:open        # 打开 Xcode
-```
-
-### 日常迭代
-
-```bash
-npm run cap:sync        # build dist → sync 到 ios
-# 或
-npm run ios             # sync + open Xcode
-```
-
-### Xcode 真机打包检查清单
-
-1. **Signing & Capabilities**
-   - Team 选你的 Apple 开发者账号  
-   - Bundle Identifier 不要用别人的（改 `capacitor.config.json` 的 `appId` 后重新 `cap sync`，并在 Xcode 确认 `PRODUCT_BUNDLE_IDENTIFIER`）
-2. 顶部设备选 **真机**（非仅 Generic iOS Device）
-3. Run（⌘R）
-4. 首次真机：信任开发者证书（设置 → 通用 → VPN 与设备管理）
-5. 点 HUD 上的震动按钮验证 Core Haptics
-
-### 等价手动流程（与你笔记一致）
-
-```bash
-npm install @capacitor/core @capacitor/cli @capacitor/ios
-npx cap init          # 本仓库已写好 capacitor.config.json，可跳过
-npx cap add ios
-npm run build
-# 再执行 npm run ios:bootstrap 注入插件，或手动复制 plugins/native-haptics/*.swift
-npx cap sync
-npx cap open ios
-```
+| 脚本 | 作用 |
+|------|------|
+| `dev` | Vite 开发服务器（5190） |
+| `build` | 产出 `dist/` |
+| `cap:sync` | build + 同步到 ios |
+| `cap:open` | 打开 Xcode |
+| `ios` | sync + open |
+| `ios:bootstrap` | 添加/修复 iOS 工程并注入 NativeHaptics |
 
 ---
 
-## 4. 复用到其他项目
+## 复用到新游戏
 
-| 要带走的 | 路径 |
-|----------|------|
-| WebGPU 渲染入口 | `src/create-renderer.js` |
-| 震动 JS API | `src/native-haptics.js` |
-| 震动原生实现 | `plugins/native-haptics/*.swift` |
-| Capacitor 路径配置 | `vite.config.js` 的 `base: './'` + `webDir: "dist"` |
-| iOS 接入脚本 | `scripts/bootstrap-ios.mjs` |
+1. 复制整个 `three-webgpu-cap-shell` 目录  
+2. 改 `appId` / `appName`，必要时重 init git  
+3. 在 `src/main.js`（或 `src/game/*`）写玩法  
+4. **保留** renderer / viewport / haptics / plugins / `base: './'`  
 
-建议：每个新游戏 **复制整个 shell 目录** 后改 `appId`，再在 `src/main.js` 写玩法。  
-拼豆专属的吸豆/放豆/熨烫震动曲线应写在业务层，不要塞回 shell。
+业务侧震动节奏（连击、反馈强弱等）写在游戏层，用 `createNativeHaptics()` 组合调用。
 
 ---
 
-## 5. 重要限制
+## 硬性约定（摘要）
 
-| 点 | 说明 |
-|----|------|
-| WebGPU | 无 `navigator.gpu` 会直接提示失败（不做静默 WebGL 回退） |
-| 震动 | 仅 **iOS 原生 App** 生效；Safari/Chrome 桌面预览返回 `not_native_ios` |
-| 路径 | 必须 `base: './'`，否则 Capacitor 加载 `/assets` 失败 |
-| Team | 真机签名必须在 Xcode 绑定你的 Development Team |
+1. Capacitor 必须用相对路径：`base: './'`  
+2. UI 进 `#hud`，安全区用 `--safe-*`  
+3. 渲染尺寸跟 `#phone-frame`，不要裸用整窗 `innerWidth`  
+4. 无 WebGPU 则明确失败，不静默 WebGL  
+5. 改 Swift 插件改真源后跑 `ios:bootstrap`  
+
+细节与踩坑见 [docs/ENGINEERING.md](./docs/ENGINEERING.md)。
 
 ---
 
-## 6. 与拼豆工程的关系
+## License / 归属
 
-- **拼豆** `Threejs_Work/ThreeJS`：完整产品  
-- **本 shell**：可复制的最小底座（渲染 + 打包 + 震动插件）  
-- **Bead/three-tsl-webgpu**：早期模板实验，不作为正式底座
-
-本地预览：`npm run dev` → http://127.0.0.1:5190/
+私有脚手架；Three.js 与 Capacitor 遵循其各自许可证。

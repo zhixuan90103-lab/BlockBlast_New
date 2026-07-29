@@ -1,0 +1,105 @@
+# 入口与调用链
+
+打开本文件可快速定位「从哪里启动、谁调用谁」。
+
+---
+
+## 1. 命令入口
+
+| 命令 | 脚本 | 结果 |
+|------|------|------|
+| `npm run dev` | `vite` | 本地 Web，默认 **http://127.0.0.1:5190/** |
+| `npm run build` | `vite build` | 产出 `dist/`（相对路径资源） |
+| `npm run preview` | `vite preview` | 预览 dist |
+| `npm run cap:sync` | `build` + `cap sync ios` | Web → iOS `App/public` |
+| `npm run cap:open` | `cap open ios` | 打开 Xcode |
+| `npm run ios` | sync + open | 日常上机 |
+| `npm run ios:bootstrap` | `scripts/bootstrap-ios.mjs` | 首次/修复 iOS + 插件 |
+
+---
+
+## 2. Web 启动链
+
+```
+index.html
+  ├─ src/style.css
+  └─ src/main.js
+        ├─ applyNativeClass() / applyShellLayout()     ← viewport.js
+        ├─ createRenderer({ container: #stage })       ← create-renderer.js
+        │     └─ three/webgpu WebGPURenderer
+        ├─ resize: bindShellResize → resizeToFrame()
+        ├─ createNativeHaptics()                       ← native-haptics.js
+        │     └─ Capacitor registerPlugin('NativeHaptics')
+        └─ demo scene (Box + OrbitControls) + HUD 按钮
+```
+
+**替换玩法：** 主要改 `src/main.js`（或拆 `src/game/*` 再由 main 引入）。  
+**不要删：** `create-renderer.js` / `viewport.js` / `native-haptics.js` 契约。
+
+---
+
+## 3. DOM 入口
+
+```html
+#letterbox
+  #phone-frame          ← getFrameSize() 量这里
+    #stage              ← canvas 父节点
+    #hud                ← 安全区 UI
+      header / .panel / [data-haptic]
+```
+
+| ID | 谁写入 | 谁读取 |
+|----|--------|--------|
+| `#stage` | `createRenderer` append canvas | 无 |
+| `#phone-frame` | CSS / `applyShellLayout` | `getFrameSize` |
+| `#hud` | 静态 HTML + 业务 UI | CSS safe padding |
+| `body.native-app` | `applyNativeClass` | CSS 真机规则 |
+
+---
+
+## 4. iOS 原生入口
+
+```
+Xcode Run
+  → AppDelegate
+  → Main.storyboard → BridgeViewController (CAPBridgeViewController)
+       → capacitorDidLoad
+            → registerPluginInstance(NativeHapticsPlugin)
+       → 加载 App/public/index.html（= dist 同步结果）
+            → 同上 Web 启动链
+```
+
+插件方法名（JS ↔ Swift）：
+
+| JS | Swift `@objc` |
+|----|----------------|
+| `prepare` | `prepare` |
+| `playTransient` | `playTransient` |
+| `startContinuous` | `startContinuous` |
+| `updateContinuous` | `updateContinuous` |
+| `stopContinuous` | `stopContinuous` |
+
+---
+
+## 5. 配置入口
+
+| 要改… | 改这个文件 |
+|--------|------------|
+| 端口 / base / 构建目标 | `vite.config.js` |
+| Bundle ID / 应用名 / contentInset | `capacitor.config.json` |
+| 设计分辨率 / 桌面 safe 模拟 | `src/viewport.js` **且** `src/style.css` |
+| 启动页文案 / HUD 结构 | `index.html` |
+| 震动原生实现 | `plugins/native-haptics/NativeHapticsPlugin.swift` 后 bootstrap |
+| 忽略规则 | `.gitignore` |
+
+---
+
+## 6. 文档入口（给「每个新窗口」）
+
+| 读者 | 先读 |
+|------|------|
+| AI Agent / 新 Cursor·Grok 会话 | **[AGENTS.md](../AGENTS.md)** |
+| 人类第一次 clone | **[README.md](../README.md)** |
+| 深挖设计/坑 | **[ENGINEERING.md](./ENGINEERING.md)** |
+| 只查入口链 | **本文件** |
+| 震动插件 alone | [plugins/native-haptics/README.md](../plugins/native-haptics/README.md) |
