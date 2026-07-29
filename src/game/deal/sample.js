@@ -13,6 +13,12 @@ import {
   findAnyPlacement,
   simulatePlace,
 } from './board-ops.js';
+import {
+  isBagEnabled,
+  pickFormAnyAllowed,
+  pickFormFromRole,
+  rollRole,
+} from './bag.js';
 import { familyMulForPhase, isScrapFamily } from './phase.js';
 import {
   acceptShapeDiversity,
@@ -32,7 +38,7 @@ import {
 } from './size-rhythm.js';
 
 /**
- * 按 尺寸配方 × 形状配方 × 当前可放 生成 tray
+ * 按 角色袋 × 尺寸 × 形状 × 当前可放 生成 tray
  * @param {(number|null)[][]} board
  * @param {import('./phase.js').DealPhase} phase
  * @param {{
@@ -56,6 +62,7 @@ export function buildSizedFitTray(board, phase, opts = {}) {
     for (const i of [0, 1, 2, 3, 10, 11]) mul[i] = (mul[i] || 1) * 1.35;
     for (const i of [4, 5, 7, 9]) mul[i] = (mul[i] || 1) * 0.45;
   }
+  const useBag = isBagEnabled();
   const used = new Set();
   /** @type {import('../forms.js').PieceDef[]} */
   const pieces = [];
@@ -64,26 +71,58 @@ export function buildSizedFitTray(board, phase, opts = {}) {
   for (let i = 0; i < TRAY_SIZE; i++) {
     const wantSize = sizePlan[i] || 'M';
     const wantShape = shapePlan[i] || null;
+    const role = useBag ? rollRole(phase, rng) : null;
     const tiers = tierFallbacks(wantSize, open, open ? 1 : 2);
     let form = null;
     const boardNow = simulate ? sim : board;
 
-    // 1) 尺寸 ∩ 形状
-    for (const tier of tiers) {
-      form = pickFittingForm(
-        boardNow,
+    const tryRole = (tier, shape, allowBanned = false) => {
+      if (!useBag || !role) return null;
+      return pickFormFromRole({
+        role,
+        board: boardNow,
+        phase,
         tier,
-        wantShape,
-        mul,
-        used,
-        canPlaceOnCells,
+        shapeClass: shape,
+        usedKeys: used,
+        canPlace: canPlaceOnCells,
         rng,
-        tierOfForm,
-      );
-      if (form) break;
+        allowBanned,
+      });
+    };
+
+    // 1) 角色 ∩ 尺寸 ∩ 形状
+    if (useBag) {
+      for (const tier of tiers) {
+        form = tryRole(tier, wantShape);
+        if (form) break;
+      }
+      if (!form && wantShape) form = tryRole(null, wantShape);
+      if (!form) {
+        for (const tier of tiers) {
+          form = tryRole(tier, null);
+          if (form) break;
+        }
+      }
+      if (!form) form = tryRole(null, null);
     }
 
-    // 2) 仅形状（尺寸放宽）
+    // 2) 无袋或角色抽空：尺寸 ∩ 形状（旧路径）
+    if (!form) {
+      for (const tier of tiers) {
+        form = pickFittingForm(
+          boardNow,
+          tier,
+          wantShape,
+          mul,
+          used,
+          canPlaceOnCells,
+          rng,
+          tierOfForm,
+        );
+        if (form) break;
+      }
+    }
     if (!form && wantShape) {
       form = pickFittingForm(
         boardNow,
@@ -96,8 +135,6 @@ export function buildSizedFitTray(board, phase, opts = {}) {
         tierOfForm,
       );
     }
-
-    // 3) 仅尺寸
     if (!form) {
       for (const tier of tiers) {
         form = pickFittingForm(
@@ -114,18 +151,27 @@ export function buildSizedFitTray(board, phase, opts = {}) {
       }
     }
 
-    // 4) 任意可放（仍避开开阔盘豆丁）
+    // 3) 任意可放（early 仍尽量禁碎）
     if (!form) {
-      for (let t = 0; t < 50; t++) {
+      form = pickFormAnyAllowed(boardNow, phase, used, canPlaceOnCells, rng, mul);
+    }
+    if (!form) {
+      for (let t = 0; t < 40; t++) {
         const f = pickWeightedForm(rng, mul);
         const key = matrixKey(f.matrix);
         if (used.has(key)) continue;
         if (!canPlaceOnCells(boardNow, f.matrix)) continue;
         if (open && wantSize !== 'S' && countCells(f.matrix) <= 3) continue;
-        // 尽量不与已有形状类重复
         if (pieces.some((p) => shapeClassOf(p) === shapeClassOf(f)) && t < 25) continue;
         form = f;
         break;
+      }
+    }
+
+    if (!form) {
+      // 最后放宽 early 禁族
+      if (useBag && role) {
+        form = tryRole(null, null, true);
       }
     }
 

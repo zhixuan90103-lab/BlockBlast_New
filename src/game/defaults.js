@@ -76,6 +76,27 @@ export const DEAL_EARLY_CLEAR_MAX_NODES = 1400;
 /** mid 尝试清屏 tray 的概率 */
 export const DEAL_MID_CLEAR_CHANCE = 0.12;
 
+/**
+ * 角色袋（β）：按阶段配比抽 staple/solver/key/rare，再在袋内加权。
+ * 见 research/DEAL-SHAPE-ROLES.md
+ */
+export const DEAL_BAG_ENABLED = true;
+/** early 禁 2直/缺角（γ），fallback 时可放宽 */
+export const DEAL_EARLY_BAN_TINY = true;
+/** 阶段 × 角色目标占比（相对权重，会归一化） */
+export const DEAL_ROLE_EARLY_STAPLE = 0.7;
+export const DEAL_ROLE_EARLY_SOLVER = 0.1;
+export const DEAL_ROLE_EARLY_KEY = 0.12;
+export const DEAL_ROLE_EARLY_RARE = 0.08;
+export const DEAL_ROLE_MID_STAPLE = 0.3;
+export const DEAL_ROLE_MID_SOLVER = 0.45;
+export const DEAL_ROLE_MID_KEY = 0.2;
+export const DEAL_ROLE_MID_RARE = 0.05;
+export const DEAL_ROLE_LATE_STAPLE = 0.25;
+export const DEAL_ROLE_LATE_SOLVER = 0.4;
+export const DEAL_ROLE_LATE_KEY = 0.28;
+export const DEAL_ROLE_LATE_RARE = 0.07;
+
 // —— 手感 FEEL_* ——
 /**
  * 正版 tray 手感：

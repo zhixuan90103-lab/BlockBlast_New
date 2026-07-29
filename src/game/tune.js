@@ -87,6 +87,20 @@ function createDefaultTune() {
     DEAL_EARLY_CLEAR_MIN: D.DEAL_EARLY_CLEAR_MIN,
     DEAL_EARLY_CLEAR_MAX: D.DEAL_EARLY_CLEAR_MAX,
     DEAL_EARLY_CLEAR_FILL_MAX: D.DEAL_EARLY_CLEAR_FILL_MAX,
+    DEAL_BAG_ENABLED: D.DEAL_BAG_ENABLED ? 1 : 0,
+    DEAL_EARLY_BAN_TINY: D.DEAL_EARLY_BAN_TINY ? 1 : 0,
+    DEAL_ROLE_EARLY_STAPLE: D.DEAL_ROLE_EARLY_STAPLE,
+    DEAL_ROLE_EARLY_SOLVER: D.DEAL_ROLE_EARLY_SOLVER,
+    DEAL_ROLE_EARLY_KEY: D.DEAL_ROLE_EARLY_KEY,
+    DEAL_ROLE_EARLY_RARE: D.DEAL_ROLE_EARLY_RARE,
+    DEAL_ROLE_MID_STAPLE: D.DEAL_ROLE_MID_STAPLE,
+    DEAL_ROLE_MID_SOLVER: D.DEAL_ROLE_MID_SOLVER,
+    DEAL_ROLE_MID_KEY: D.DEAL_ROLE_MID_KEY,
+    DEAL_ROLE_MID_RARE: D.DEAL_ROLE_MID_RARE,
+    DEAL_ROLE_LATE_STAPLE: D.DEAL_ROLE_LATE_STAPLE,
+    DEAL_ROLE_LATE_SOLVER: D.DEAL_ROLE_LATE_SOLVER,
+    DEAL_ROLE_LATE_KEY: D.DEAL_ROLE_LATE_KEY,
+    DEAL_ROLE_LATE_RARE: D.DEAL_ROLE_LATE_RARE,
   };
 }
 
@@ -416,6 +430,22 @@ export const TUNE_FIELDS = [
       {
         key: 'DEAL_PHASE_ENABLED',
         label: '阶段推送',
+        min: 0,
+        max: 1,
+        step: 1,
+        format: (v) => (v >= 0.5 ? '开' : '关'),
+      },
+      {
+        key: 'DEAL_BAG_ENABLED',
+        label: '角色袋(staple/key)',
+        min: 0,
+        max: 1,
+        step: 1,
+        format: (v) => (v >= 0.5 ? '开' : '关'),
+      },
+      {
+        key: 'DEAL_EARLY_BAN_TINY',
+        label: '前期禁碎条/缺角',
         min: 0,
         max: 1,
         step: 1,

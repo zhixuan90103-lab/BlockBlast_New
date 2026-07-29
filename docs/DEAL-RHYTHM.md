@@ -2,7 +2,8 @@
 
 **代码：** `src/game/deal/`  
 **入口：** `src/game/pieces.js`（re-export）  
-**常量：** `defaults.js` 的 `DEAL_*`
+**常量：** `defaults.js` 的 `DEAL_*`  
+**检索计划（节奏×图案角色）：** `../../research/DEAL-SHAPE-RESEARCH-PLAN.md`
 
 ---
 
@@ -20,8 +21,9 @@
 | 文件 | 职责 |
 |------|------|
 | `board-ops.js` | fits / 模拟放置消线 / 顺序可解 / instant 计数 |
-| `phase.js` | early·mid·late、回跳、族权重 |
-| `sample.js` | 按当前空位 + 尺寸节奏采样 tray |
+| `phase.js` | early·mid·late、回跳、族权重（α） |
+| `bag.js` | 角色袋 staple/solver/key/rare（β）+ early 禁碎（γ） |
+| `sample.js` | 角色 × 尺寸 × 形状 × 空位采样 |
 | `size-rhythm.js` | 大/中/小块配方（S/M/L）与阶段节奏 |
 | `shape-class.js` | 形状类：方块 / 横条 / 竖条 / 转角 / Z / T |
 | `clear-tray.js` | 可选：本 tray 三步清屏（仅当前盘） |
