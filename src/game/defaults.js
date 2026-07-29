@@ -259,17 +259,17 @@ export const FEEL_CLEAR_DEBRIS_GRAVITY = 2200;
 export const FEEL_CLEAR_DEBRIS_SPEED = 2.8;
 /**
  * 消行屏幕震动（boardView 位移，单位≈像素）。
- * 时长与 FEEL_CLEAR_MS 同步；包络开始大、结尾小。
+ * 时长与 FEEL_CLEAR_MS 同步；软起振 + 平滑衰减（偏柔和）。
  * **峰值最小 = AMP_MIN**（单消）；每多 1 条 +STEP，封顶 MAX。
  */
-export const FEEL_CLEAR_SHAKE_AMP_MIN = 2.4;
+export const FEEL_CLEAR_SHAKE_AMP_MIN = 11;
 /** @deprecated 兼容旧名 */
 export const FEEL_CLEAR_SHAKE_AMP_DEFAULT = FEEL_CLEAR_SHAKE_AMP_MIN;
 export const FEEL_CLEAR_SHAKE_AMP_1 = FEEL_CLEAR_SHAKE_AMP_MIN;
-export const FEEL_CLEAR_SHAKE_AMP_STEP = 2.8;
-export const FEEL_CLEAR_SHAKE_AMP_MAX = 16;
-/** 震动振荡频率（Hz） */
-export const FEEL_CLEAR_SHAKE_HZ = 38;
+export const FEEL_CLEAR_SHAKE_AMP_STEP = 4.0;
+export const FEEL_CLEAR_SHAKE_AMP_MAX = 28;
+/** 震动振荡频率（Hz，偏低更柔） */
+export const FEEL_CLEAR_SHAKE_HZ = 18;
 export const FEEL_INPUT_LOCK_MS = 150;
 export const FEEL_HIT_SLOP = 0.2;
 export const FEEL_PICKUP_SCALE_MS = 100;

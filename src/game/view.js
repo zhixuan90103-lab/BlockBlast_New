@@ -745,17 +745,26 @@ export function createBoardView(scene) {
       return;
     }
 
-    // 与消除动画同进度：t=0 满幅，t=1 归零（ease-out 二次）
-    const envelope = (1 - t01) * (1 - t01);
-    // 相对 clear 起点计相位，整段时长 = clearFx.duration
+    // 软起振（前 ~15% smoothstep 抬升）+ 长尾平滑衰减，避免开头「硬撞」
+    const attackT = Math.min(1, t01 / 0.15);
+    const attack = attackT * attackT * (3 - 2 * attackT);
+    const decay = (1 - t01) ** 2.4;
+    const envelope = attack * decay;
+
     const elapsedMs =
       clearFx.start != null
         ? Math.max(0, nowMs - clearFx.start)
         : t01 * (clearFx.duration || 340);
-    const phase = (elapsedMs * 0.001) * hz * Math.PI * 2;
+    // 频率随进度略降，后段更松
+    const hzNow = hz * (1 - t01 * 0.4);
+    const phase = (elapsedMs * 0.001) * hzNow * Math.PI * 2;
     const a = peak * envelope;
-    root.position.x = Math.sin(phase) * a;
-    root.position.y = Math.cos(phase * 1.19 + 0.8) * a * 0.88;
+    // 主波 + 较弱慢波混合，减少锯齿感
+    const soft =
+      Math.sin(phase) * 0.72 + Math.sin(phase * 0.55 + 0.9) * 0.28;
+    root.position.x = soft * a;
+    root.position.y =
+      (Math.sin(phase * 0.82 + 1.2) * 0.55 + Math.cos(phase * 0.4) * 0.2) * a;
   }
 
   /**
