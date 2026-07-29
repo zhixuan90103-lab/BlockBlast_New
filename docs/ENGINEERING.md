@@ -2,7 +2,7 @@
 
 面向维护者与 AI：本底座的设计决策、模块职责与踩坑点。
 
-配套入口：[AGENTS.md](../AGENTS.md) · [README.md](../README.md) · [ENTRYPOINTS.md](./ENTRYPOINTS.md)
+配套入口：[AGENTS.md](../AGENTS.md) · [README.md](../README.md) · [ENTRYPOINTS.md](./ENTRYPOINTS.md) · [FEEL-DESIGN.md](./FEEL-DESIGN.md) · [PROJECT-HISTORY.md](./PROJECT-HISTORY.md)（实现与问题全景）
 
 ---
 
@@ -27,17 +27,25 @@ three-webgpu-cap-shell/
 ├── README.md                 # 人类快速上手
 ├── docs/
 │   ├── ENGINEERING.md        # 本文件
-│   └── ENTRYPOINTS.md        # 入口与调用链
+│   ├── ENTRYPOINTS.md        # 入口与调用链
+│   └── FEEL-DESIGN.md        # 手感/投影：问题→约束→模块
 ├── index.html                # DOM 壳：letterbox / phone-frame / stage / hud
 ├── package.json
 ├── vite.config.js            # base: './' · port 5190 · es2022
 ├── capacitor.config.json     # appId · webDir · ios.contentInset never
 ├── src/
-│   ├── main.js               # demo：场景 + 震动按钮（可替换为游戏）
+│   ├── main.js               # boot：viewport + createGame + feel-panel
 │   ├── create-renderer.js    # WebGPU 创建 / resizeToFrame
-│   ├── viewport.js           # 设计尺寸 · native class · shell layout · safe vars
+│   ├── viewport.js           # 设计尺寸 · safe 探针 · scheduleStableLayout
 │   ├── native-haptics.js     # 通用震动桥（无业务曲线）
-│   └── style.css             # letterbox · safe-area · HUD
+│   ├── feel-panel.js         # 调参面板（布局 rebuild / 手感 paint）
+│   ├── style.css             # letterbox · safe-area · HUD · panel
+│   └── game/
+│       ├── game.js           # 编排（规则 + 指针 + feel）
+│       ├── defaults.js / tune.js
+│       ├── feel/             # drag-session · ghost-policy · haptics-ghost
+│       ├── grid.js · forms.js · pieces.js · score.js
+│       ├── layout.js · view.js · block-mesh.js
 ├── plugins/native-haptics/   # Swift 源码「真源」；bootstrap 复制进 ios/
 │   ├── NativeHapticsPlugin.swift
 │   ├── BridgeViewController.swift

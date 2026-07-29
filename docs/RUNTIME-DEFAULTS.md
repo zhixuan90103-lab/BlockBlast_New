@@ -1,3 +1,8 @@
+# 运行时 defaults.js 快照
+
+> 由文档整理生成；**以 `src/game/defaults.js` 为准**。生成日 2026-07-29。
+
+```js
 /**
  * 实现真源常量 — research/DEFAULTS.md + 视觉对齐正版（木纹 / 立体块）。
  */
@@ -18,63 +23,6 @@ export const SCORE_LINE_BASE = 10;
 export const SCORE_ALL_CLEAR = 300;
 
 export const FIT_GUARANTEE = true;
-
-// —— 发块推送 DEAL_*（阶段难度 + 呼吸）——
-/**
- * 启用后：按盘面填充率切 early/mid/late，
- * 约束 instantFit 个数，权重偏置，后期可回跳前/中期放松。
- * 关闭则退回「权重 + 可放保证」旧逻辑。
- */
-export const DEAL_PHASE_ENABLED = true;
-/** 填充率 [0,1) < 此值 → 基础阶段 early（大块+清屏主路径） */
-export const DEAL_FILL_EARLY_MAX = 0.34;
-/** 填充率 < 此值 → mid（空位+碎块），否则 late */
-export const DEAL_FILL_MID_MAX = 0.58;
-/**
- * 后期呼吸：先 roll early，否则 mid，否则 late。
- * 体感：有压也要能松口气。
- */
-export const DEAL_LATE_RELAX_EARLY = 0.1;
-export const DEAL_LATE_RELAX_MID = 0.28;
-/** 中期偶发「回前期清屏感」 */
-export const DEAL_MID_RELAX_EARLY = 0.06;
-/** 单次 tray 拒绝采样最大次数 */
-export const DEAL_MAX_ATTEMPTS = 140;
-/** early 大块权重尺度 */
-export const DEAL_EARLY_NEAT_MUL = 2.35;
-/** early 三块平均格数下限（非清屏兜底时） */
-export const DEAL_EARLY_MIN_AVG_CELLS = 4.8;
-/** late 别扭/细长倍率 */
-export const DEAL_LATE_AWKWARD_MUL = 1.55;
-/** mid 压 3×3 */
-export const DEAL_MID_BIG_DAMP = 0.55;
-/**
- * mid 碎块/解题块倍率尺度（短 L、缺角、Z、T）。
- * 中期主手感：空位来块 + 不整齐小块。
- */
-export const DEAL_MID_SCRAP_MUL = 1.85;
-/**
- * 立刻可放目标：
- * early 3；mid ≥2；late 恰好 1。
- */
-export const DEAL_EARLY_INSTANT_MIN = 3;
-export const DEAL_EARLY_INSTANT_MAX = 3;
-export const DEAL_MID_INSTANT_MIN = 2;
-export const DEAL_MID_INSTANT_MAX = 3;
-export const DEAL_LATE_INSTANT_MIN = 1;
-export const DEAL_LATE_INSTANT_MAX = 1;
-/**
- * 本 tray 清屏（仅当前盘、恰好 3 块摆完可全空；不跨轮预定）
- */
-export const DEAL_EARLY_CLEAR_ENABLED = true;
-/** 兼容旧面板键（重构后固定 3 步 tray） */
-export const DEAL_EARLY_CLEAR_MIN = 3;
-export const DEAL_EARLY_CLEAR_MAX = 3;
-/** 超过此填充率不再尝试本 tray 清屏搜索 */
-export const DEAL_EARLY_CLEAR_FILL_MAX = 0.36;
-export const DEAL_EARLY_CLEAR_MAX_NODES = 1400;
-/** mid 尝试清屏 tray 的概率 */
-export const DEAL_MID_CLEAR_CHANCE = 0.12;
 
 // —— 手感 FEEL_* ——
 /**
@@ -153,12 +101,6 @@ export const FEEL_GHOST_OPEN_SNAP = 0.5;
  */
 export const FEEL_GHOST_EDGE_HOLD = 1.3;
 /**
- * 影相对块 free 原点的最大切比雪夫距离（格）。
- * 超过则取消投影（影不许甩块）；与 EDGE_HOLD 无关。
- * 默认 ~1：邻格内可跟，再远灭影。
- */
-export const FEEL_GHOST_MAX_LAG = 1.0;
-/**
  * 指速 ≥ 参考指速 × 该系数 → 投影进入「快速精准」模式（free 吸附，不贴边 1.5）。
  * 慢下来后回到边缘粘滞。
  */
@@ -213,14 +155,6 @@ export const LAYOUT_GRID_MARGIN_X = 0.05;
 export const LAYOUT_GRID_TOP_GAP = 0.018;
 /** 顶部分数占位 / frame 高（几何空间，非 UI 样式） */
 export const LAYOUT_HUD_SCORE_H = 0.11;
-/** 分数文字字号（CSS px）— 真机调参默认 */
-export const UI_SCORE_FONT_PX = 65;
-/**
- * 分数垂直偏移 / frame 高（+ 下移）。
- * 只动 HUD 文字，不改变棋盘 pad（棋盘顶仍由 LAYOUT_HUD_SCORE_H 等决定）。
- * 真机调参默认 0.060。
- */
-export const UI_SCORE_OFFSET_Y = 0.06;
 /**
  * 棋盘垂直偏移 / frame 高（+ 下移）。
  * 真机调参：0.035。
@@ -289,3 +223,4 @@ export const SHOW_DEBUG_STATUS =
 
 /** 显示底栏三等分点击区（调试用，默认关） */
 export const SHOW_TRAY_ZONES = false;
+```

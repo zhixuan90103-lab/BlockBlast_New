@@ -101,5 +101,7 @@ Xcode Run
 | AI Agent / 新 Cursor·Grok 会话 | **[AGENTS.md](../AGENTS.md)** |
 | 人类第一次 clone | **[README.md](../README.md)** |
 | 深挖设计/坑 | **[ENGINEERING.md](./ENGINEERING.md)** |
+| 实现与问题纪要 | **[PROJECT-HISTORY.md](./PROJECT-HISTORY.md)** |
+| 手感问题→不变量 | **[FEEL-DESIGN.md](./FEEL-DESIGN.md)** |
 | 只查入口链 | **本文件** |
 | 震动插件 alone | [plugins/native-haptics/README.md](../plugins/native-haptics/README.md) |

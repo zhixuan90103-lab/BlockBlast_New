@@ -141,22 +141,53 @@ export function makePiece(form) {
   };
 }
 
-/** 按 Kefrov 权重抽 family */
-export function pickFamilyIndex(rng = Math.random) {
-  const r = Math.floor(rng() * 1200);
+/** 各族基础权重（Kefrov 区间宽） */
+export function familyBaseWeights() {
+  /** @type {number[]} */
+  const w = [];
   for (let i = 0; i < 12; i++) {
-    if (SHAPE_PROBS_CUM[i] <= r && r < SHAPE_PROBS_CUM[i + 1]) return i;
+    w.push(SHAPE_PROBS_CUM[i + 1] - SHAPE_PROBS_CUM[i]);
   }
-  return 0;
+  return w;
+}
+
+/**
+ * 按权重抽 family；可选各族倍率（长度 12，缺省 1）。
+ * @param {() => number} [rng]
+ * @param {number[] | null} [familyMul]
+ */
+export function pickFamilyIndex(rng = Math.random, familyMul = null) {
+  if (!familyMul) {
+    const r = Math.floor(rng() * 1200);
+    for (let i = 0; i < 12; i++) {
+      if (SHAPE_PROBS_CUM[i] <= r && r < SHAPE_PROBS_CUM[i + 1]) return i;
+    }
+    return 0;
+  }
+  const base = familyBaseWeights();
+  let total = 0;
+  const acc = [];
+  for (let i = 0; i < 12; i++) {
+    const m = familyMul[i] != null && Number.isFinite(familyMul[i]) ? familyMul[i] : 1;
+    total += Math.max(0, base[i] * m);
+    acc.push(total);
+  }
+  if (total <= 0) return pickFamilyIndex(rng, null);
+  const r = rng() * total;
+  for (let i = 0; i < 12; i++) {
+    if (r < acc[i]) return i;
+  }
+  return 11;
 }
 
 /**
  * 按权重抽一个变体 form
  * @param {() => number} [rng]
+ * @param {number[] | null} [familyMul] 各族倍率
  * @returns {FormDef}
  */
-export function pickWeightedForm(rng = Math.random) {
-  const fam = pickFamilyIndex(rng);
+export function pickWeightedForm(rng = Math.random, familyMul = null) {
+  const fam = pickFamilyIndex(rng, familyMul);
   const variants = FORM_FAMILIES[fam];
   return variants[Math.floor(rng() * variants.length)];
 }

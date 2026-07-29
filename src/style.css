@@ -12,7 +12,6 @@
   --wood-mid: #6b5bdb;
   --wood-dark: #4a3bb5;
   --score-cream: #ffffff;
-  --heart-pink: #ff6bcb;
 
   /**
    * Safe area (Dynamic Island / home indicator).
@@ -198,60 +197,14 @@ header {
 }
 
 .score-center {
-  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-top: 0;
   min-height: 56px;
 }
 
-.combo-heart {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%) scale(0.92);
-  width: 72px;
-  height: 64px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.35;
-  transition: opacity 0.2s ease, transform 0.2s ease;
-  pointer-events: none;
-}
-
-.combo-heart.is-active {
-  opacity: 1;
-  transform: translate(-50%, -50%) scale(1);
-}
-
-.combo-heart .heart {
-  position: absolute;
-  font-size: 64px;
-  line-height: 1;
-  color: var(--heart-pink);
-  text-shadow:
-    0 0 12px rgba(255, 107, 203, 0.75),
-    0 2px 4px rgba(0, 0, 0, 0.2);
-  opacity: 0.9;
-}
-
-.combo-heart .combo-num {
-  position: relative;
-  z-index: 1;
-  font-size: 14px;
-  font-weight: 800;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
-  font-variant-numeric: tabular-nums;
-  margin-top: 4px;
-}
-
 .main-score {
-  position: relative;
-  z-index: 2;
-  font-size: 42px;
+  font-size: var(--ui-score-font, 65px);
   font-weight: 800;
   letter-spacing: -0.03em;
   color: var(--score-cream);
@@ -260,6 +213,8 @@ header {
     0 2px 0 rgba(40, 30, 100, 0.35),
     0 4px 16px rgba(0, 0, 0, 0.25);
   line-height: 1;
+  transform: translateY(var(--ui-score-shift, 0px));
+  will-change: transform;
 }
 
 .status {
