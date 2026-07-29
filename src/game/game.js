@@ -80,6 +80,11 @@ export function createGame(opts) {
    *   startFy: number,
    *   baseCenterX: number,
    *   baseCenterY: number,
+   *   accX: number,
+   *   accY: number,
+   *   lastFx: number,
+   *   lastFy: number,
+   *   lastT: number,
    * }} */
   let drag = null;
 
@@ -279,13 +284,55 @@ export function createGame(opts) {
   }
 
   /**
-   * 拖动：从固定拿起中心 + 指针位移跟手；上移可再加大抬升。
+   * 指速 → 跟手增益（macOS 式：慢精、快远）
+   * @param {number} speedCellsPerSec
    */
-  function dragOriginFromPointer(fx, fy, matrix, dragState) {
-    const cell = layout.cell;
-    const { rows, cols } = matrixSize(matrix);
+  function pointerGainFromSpeed(speedCellsPerSec) {
     const tune = getTune();
+    const gmin = tune.FEEL_POINTER_GAIN_MIN ?? 0.92;
+    const gmax = tune.FEEL_POINTER_GAIN_MAX ?? 1.38;
+    const vref = Math.max(0.5, tune.FEEL_POINTER_SPEED_REF ?? 9);
+    const t = Math.min(1, Math.max(0, speedCellsPerSec / vref));
+    // smoothstep：中间速度平滑过渡，避免增益跳变
+    const eased = t * t * (3 - 2 * t);
+    return gmin + (gmax - gmin) * eased;
+  }
 
+  /**
+   * 拖动：固定拿起中心 + **速度积分跟手** + 上移抬升。
+   * 只更新「目标」位置；视觉位置由 tickDragSmooth 指数趋近。
+   */
+  function samplePointerIntoDrag(fx, fy, dragState) {
+    const cell = layout.cell;
+    const tune = getTune();
+    const now = performance.now();
+
+    const dx = fx - dragState.lastFx;
+    const dy = fy - dragState.lastFy;
+    const dtSec = Math.max(0.001, (now - dragState.lastT) / 1000);
+    const speedCells = Math.hypot(dx, dy) / cell / dtSec;
+    const gainTarget = pointerGainFromSpeed(speedCells);
+
+    // 增益自身平滑，避免指速抖导致位移顿挫
+    const gTau = Math.max(0, tune.FEEL_GAIN_SMOOTH_TIME ?? 0);
+    if (gTau <= 0 || dragState.smoothGain == null) {
+      dragState.smoothGain = gainTarget;
+    } else {
+      const gk = 1 - Math.exp(-dtSec / gTau);
+      dragState.smoothGain += (gainTarget - dragState.smoothGain) * gk;
+    }
+    const gain = dragState.smoothGain;
+
+    dragState.accX += dx * gain;
+    dragState.accY += dy * gain;
+    dragState.lastFx = fx;
+    dragState.lastFy = fy;
+    dragState.lastT = now;
+    dragState.lastPointerSpeed = speedCells;
+    dragState.fingerFy = fy;
+    dragState.fingerFx = fx;
+
+    // 抬升目标（手指上移）
     const upCells = Math.max(0, (dragState.startFy - fy) / cell);
     const horizCells = Math.abs((fx - dragState.startFx) / cell);
     const travel = upCells + horizCells * 0.25;
@@ -294,23 +341,51 @@ export function createGame(opts) {
     const t = Math.min(1, Math.max(0, tRaw));
     const power = tune.FEEL_DRAG_LIFT_POWER;
     const eased = t === 0 ? 0 : t === 1 ? 1 : t ** power;
-
-    // 在拿起 MIN 抬升之上，再叠 (MAX-MIN)*eased
-    const extraLiftCells =
+    dragState.extraLiftCells =
       (tune.FEEL_DRAG_OFFSET_Y_MAX - tune.FEEL_DRAG_OFFSET_Y_MIN) * eased;
 
-    const gain = 1 + (tune.FEEL_DRAG_FOLLOW_GAIN_MAX - 1) * eased;
-    const centerX =
-      dragState.baseCenterX + (fx - dragState.startFx) * gain;
+    const { rows, cols } = matrixSize(dragState.piece.matrix);
+    const centerX = dragState.baseCenterX + dragState.accX;
     const centerY =
       dragState.baseCenterY +
-      (fy - dragState.startFy) * gain +
-      extraLiftCells * cell;
+      dragState.accY +
+      dragState.extraLiftCells * cell;
+    dragState.targetOriginX = centerX - (cols * cell) / 2;
+    dragState.targetOriginY = centerY - (rows * cell) / 2;
+  }
 
-    return {
-      originX: centerX - (cols * cell) / 2,
-      originY: centerY - (rows * cell) / 2,
-    };
+  /**
+   * 视觉位置指数趋近目标；在 rAF 中调用，pointer 事件之间也继续插值 → 更顺。
+   * @returns {boolean} 是否需要重绘
+   */
+  function tickDragSmooth() {
+    if (!drag) return false;
+    const now = performance.now();
+    const dt = Math.min(0.05, Math.max(0.001, (now - (drag.smoothLastT || now)) / 1000));
+    drag.smoothLastT = now;
+
+    const tau = Math.max(0, getTune().FEEL_SMOOTH_TIME ?? 0);
+    const tx = drag.targetOriginX ?? drag.frameX;
+    const ty = drag.targetOriginY ?? drag.frameY;
+
+    if (tau <= 0.0005) {
+      drag.frameX = tx;
+      drag.frameY = ty;
+    } else {
+      const k = 1 - Math.exp(-dt / tau);
+      drag.frameX += (tx - drag.frameX) * k;
+      drag.frameY += (ty - drag.frameY) * k;
+      // 贴齐目标，避免无限小尾巴（阈值略放宽，更快「到位」）
+      if (Math.hypot(tx - drag.frameX, ty - drag.frameY) < 0.35) {
+        drag.frameX = tx;
+        drag.frameY = ty;
+      }
+    }
+
+    drag.scale = 1;
+    hover = hoverFromDragOrigin(drag.frameX, drag.frameY, drag.piece.matrix);
+    hapticGhostCellChange(hover);
+    return true;
   }
 
   /** 形状最底一排（有占格）的 matrix 行下标 */
@@ -404,9 +479,29 @@ export function createGame(opts) {
   }
 
   /**
-   * 当前粘滞格上，四向换格阈值：
-   * - 开阔（该向一步可放）→ OPEN_SNAP 0.5
-   * - 边缘（该向一步不可放）→ EDGE_HOLD 1.5
+   * 是否「快速精准」模式：快滑时投影跟 free，不套 1.5 边缘粘滞。
+   * 带滞回，避免快慢交界来回切。
+   */
+  function isGhostFastMode() {
+    if (!drag) return false;
+    const tune = getTune();
+    const speed = drag.lastPointerSpeed || 0;
+    const vref = Math.max(1, tune.FEEL_POINTER_SPEED_REF ?? 8);
+    const enter = vref * (tune.FEEL_GHOST_FAST_SPEED_RATIO ?? 0.45);
+    const exit = enter * (tune.FEEL_GHOST_FAST_EXIT_RATIO ?? 0.55);
+    if (drag.ghostFastMode) {
+      if (speed < exit) drag.ghostFastMode = false;
+    } else if (speed >= enter) {
+      drag.ghostFastMode = true;
+    }
+    return !!drag.ghostFastMode;
+  }
+
+  /**
+   * 慢速四向阈值：
+   * - 开阔方向 → OPEN_SNAP
+   * - 不可放方向 → EDGE_HOLD（贴边感）
+   * 快速模式不用此表。
    */
   function thresholdsAt(matrix, row, col) {
     const { FEEL_GHOST_OPEN_SNAP: open, FEEL_GHOST_EDGE_HOLD: edge } = getTune();
@@ -419,13 +514,76 @@ export function createGame(opts) {
   }
 
   /**
-   * 相对粘滞格的位移主轴：横 > 竖 → 只改列；竖 > 横 → 只改行。
-   * 带滞回，避免边界附近轴来回翻。
+   * 按 free 吸附：只认「手指底下」这一格（及紧邻 1 格）。
+   * 禁止大范围螺旋搜盘——否则会把投影吸到远处可放区（块在右下、影在左上）。
+   */
+  function hoverFreeSnap(freeColF, freeRowF, matrix) {
+    const { rows, cols } = matrixSize(matrix);
+    const maxCol = GRID - cols;
+    const maxRow = GRID - rows;
+    // 不先钳进盘：先看真实 round，出界再轻微钳
+    let col = Math.round(freeColF);
+    let row = Math.round(freeRowF);
+
+    const tryAt = (r, c) => {
+      if (r < 0 || c < 0 || r > maxRow || c > maxCol) return null;
+      if (!grid.fits(matrix, r, c)) return null;
+      drag.sticky = { row: r, col: c };
+      return makeValidHover(r, c, matrix);
+    };
+
+    let hit = tryAt(row, col);
+    if (hit) return hit;
+
+    // 仅紧邻 1 格（半格误差），绝不 rad=4 跨半盘
+    const neighbors = [
+      [0, 1],
+      [0, -1],
+      [1, 0],
+      [-1, 0],
+      [1, 1],
+      [1, -1],
+      [-1, 1],
+      [-1, -1],
+    ];
+    for (const [dr, dc] of neighbors) {
+      hit = tryAt(row + dr, col + dc);
+      if (hit) return hit;
+    }
+
+    // 略出界：钳到盘缘再试一次（仍是 free 对应缘，不是远处空位）
+    const cCol = Math.max(0, Math.min(maxCol, col));
+    const cRow = Math.max(0, Math.min(maxRow, row));
+    if (cCol !== col || cRow !== row) {
+      hit = tryAt(cRow, cCol);
+      if (hit) return hit;
+    }
+
+    return null;
+  }
+
+  /**
+   * free 与 sticky 偏差（格）
+   */
+  function stickyLagCells(freeColF, freeRowF, s) {
+    return Math.max(
+      Math.abs(freeColF - s.col),
+      Math.abs(freeRowF - s.row),
+    );
+  }
+
+  /**
+   * 相对粘滞格的位移主轴。偏差大时强制 both，避免轴锁死导致只动一行不改列。
    * @returns {'h' | 'v' | 'both'}
    */
   function resolveDominantAxis(freeColF, freeRowF, s) {
     const dCol = Math.abs(freeColF - s.col);
     const dRow = Math.abs(freeRowF - s.row);
+    // 与 free 差超过 ~1.25 格：解除轴锁，双轴追赶
+    if (dCol > 1.25 || dRow > 1.25) {
+      if (drag) drag.axisLock = null;
+      return 'both';
+    }
     const bias = getTune().FEEL_AXIS_DOMINANCE;
     const prev = drag?.axisLock;
 
@@ -437,16 +595,14 @@ export function createGame(opts) {
       if (drag) drag.axisLock = 'v';
       return 'v';
     }
-    // 接近相等：保持上一主轴；都没有则允许双轴（斜向）
     if (prev === 'h' || prev === 'v') return prev;
     return 'both';
   }
 
   /**
-   * 锚点 → 投影原点（底排锚 + 双阈值粘滞 + 轴向主导）
-   * 0) 形状底排未进盘 → 无投影
-   * 1) free 坐标按底排/底边算，不是左上角中心
-   * 2) 开阔 0.5 / 边缘 1.5；横向主导防乱跳
+   * 锚点 → 投影原点
+   * - free 与 sticky 差大 / 快速：free 吸附跟上块
+   * - 慢速近距：开阔 0.5 / 贴边 1.5
    */
   function hoverFromDragOrigin(originX, originY, matrix) {
     if (!drag) return null;
@@ -463,43 +619,41 @@ export function createGame(opts) {
       matrix,
     );
 
-    // —— 尚无粘滞：首次吸附到合法格 ——
-    if (!drag.sticky) {
-      const col = Math.round(freeColF);
-      const row = Math.round(freeRowF);
-      if (grid.fits(matrix, row, col)) {
-        drag.sticky = { row, col };
+    // free 与 sticky 偏差过大 / 快速 → 跟 free（跟不上则无投影，绝不飞去远处）
+    const lag =
+      drag.sticky != null
+        ? stickyLagCells(freeColF, freeRowF, drag.sticky)
+        : 999;
+    if (isGhostFastMode() || lag > 1.15) {
+      const snapped = hoverFreeSnap(freeColF, freeRowF, matrix);
+      // free 不可放：清空旧 sticky，避免影停在旧格
+      if (!snapped) {
+        drag.sticky = null;
         drag.axisLock = null;
-        return makeValidHover(row, col, matrix);
       }
-      const { rows, cols } = matrixSize(matrix);
-      const minCol = 0;
-      const maxCol = GRID - cols;
-      const minRow = 0;
-      const maxRow = GRID - rows;
-      let overCol = 0;
-      if (freeColF < minCol) overCol = minCol - freeColF;
-      else if (freeColF > maxCol) overCol = freeColF - maxCol;
-      let overRow = 0;
-      if (freeRowF < minRow) overRow = minRow - freeRowF;
-      else if (freeRowF > maxRow) overRow = freeRowF - maxRow;
-      if (Math.max(overCol, overRow) <= getTune().FEEL_GHOST_EDGE_HOLD) {
-        const cCol = Math.max(minCol, Math.min(maxCol, col));
-        const cRow = Math.max(minRow, Math.min(maxRow, row));
-        if (grid.fits(matrix, cRow, cCol)) {
-          drag.sticky = { row: cRow, col: cCol };
-          drag.axisLock = null;
-          return makeValidHover(cRow, cCol, matrix);
-        }
-      }
-      return null;
+      return snapped;
+    }
+
+    // —— 慢速近距：双阈值粘滞 ——
+    if (!drag.sticky) {
+      return hoverFreeSnap(freeColF, freeRowF, matrix);
     }
 
     const s = drag.sticky;
     if (!grid.fits(matrix, s.row, s.col)) {
       drag.sticky = null;
       drag.axisLock = null;
-      return hoverFromDragOrigin(originX, originY, matrix);
+      return hoverFreeSnap(freeColF, freeRowF, matrix);
+    }
+
+    // sticky 仍合法但 free 已明显离开：不要死钉旧格
+    if (lag > 0.95) {
+      const snapped = hoverFreeSnap(freeColF, freeRowF, matrix);
+      if (!snapped) {
+        drag.sticky = null;
+        drag.axisLock = null;
+      }
+      return snapped;
     }
 
     const axis = resolveDominantAxis(freeColF, freeRowF, s);
@@ -507,7 +661,6 @@ export function createGame(opts) {
     let targetCol = s.col;
     let targetRow = s.row;
 
-    // 每次最多 ±1 格（勿 Math.round 连跳；减边界来回抖）
     if (axis === 'h' || axis === 'both') {
       if (freeColF >= s.col + th.right) targetCol = s.col + 1;
       else if (freeColF <= s.col - th.left) targetCol = s.col - 1;
@@ -521,7 +674,6 @@ export function createGame(opts) {
       return makeValidHover(s.row, s.col, matrix);
     }
 
-    // 优先完整目标；否则主轴单步；都非法则取消投影
     const candidates = [
       [targetRow, targetCol],
       [s.row, targetCol],
@@ -535,23 +687,40 @@ export function createGame(opts) {
       }
     }
 
-    drag.sticky = null;
-    drag.axisLock = null;
-    return null;
+    // 真·贴边：free 近、朝不可放 → 保持；否则无投影
+    const towardBlocked =
+      (targetCol > s.col && !canStep(matrix, s.row, s.col, 0, 1)) ||
+      (targetCol < s.col && !canStep(matrix, s.row, s.col, 0, -1)) ||
+      (targetRow > s.row && !canStep(matrix, s.row, s.col, 1, 0)) ||
+      (targetRow < s.row && !canStep(matrix, s.row, s.col, -1, 0));
+    if (towardBlocked && lag <= 1.0) {
+      return makeValidHover(s.row, s.col, matrix);
+    }
+
+    const snapped = hoverFreeSnap(freeColF, freeRowF, matrix);
+    if (!snapped) {
+      drag.sticky = null;
+      drag.axisLock = null;
+    }
+    return snapped;
   }
 
-  function updateDragVisual(fx, fy) {
+  function updateDragFromPointer(fx, fy) {
     if (!drag) return;
-    const { originX, originY } = dragOriginFromPointer(
-      fx,
-      fy,
-      drag.piece.matrix,
-      drag,
-    );
-    drag.frameX = originX;
-    drag.frameY = originY;
-    drag.scale = 1;
-    hover = hoverFromDragOrigin(originX, originY, drag.piece.matrix);
+    samplePointerIntoDrag(fx, fy, drag);
+    // 指针事件到来时：快速贴近目标（减少「慢半拍」），细平滑交给 rAF
+    const tau = Math.max(0, getTune().FEEL_SMOOTH_TIME ?? 0);
+    if (tau <= 0.0005 || drag.snapVisualOnce) {
+      drag.frameX = drag.targetOriginX;
+      drag.frameY = drag.targetOriginY;
+      drag.snapVisualOnce = false;
+    } else {
+      // 事件帧用更猛的追赶（约 2×），体感更「到得了」
+      const k = Math.min(1, 1 - Math.exp(-0.016 / Math.max(0.004, tau * 0.45)));
+      drag.frameX += (drag.targetOriginX - drag.frameX) * k;
+      drag.frameY += (drag.targetOriginY - drag.frameY) * k;
+    }
+    hover = hoverFromDragOrigin(drag.frameX, drag.frameY, drag.piece.matrix);
     hapticGhostCellChange(hover);
     paint();
   }
@@ -577,12 +746,15 @@ export function createGame(opts) {
 
     const piece = tray[idx];
     const pose = fixedPickupPose(idx, piece.matrix);
+    const now = performance.now();
     drag = {
       trayIndex: idx,
       piece,
       pointerId: e.pointerId,
       frameX: pose.originX,
       frameY: pose.originY,
+      targetOriginX: pose.originX,
+      targetOriginY: pose.originY,
       scale: 1,
       sticky: null,
       axisLock: null,
@@ -590,6 +762,19 @@ export function createGame(opts) {
       startFy: fy,
       baseCenterX: pose.baseCenterX,
       baseCenterY: pose.baseCenterY,
+      accX: 0,
+      accY: 0,
+      lastFx: fx,
+      lastFy: fy,
+      lastT: now,
+      smoothLastT: now,
+      smoothGain: 1,
+      lastPointerSpeed: 0,
+      ghostFastMode: false,
+      snapVisualOnce: true,
+      extraLiftCells: 0,
+      fingerFx: fx,
+      fingerFy: fy,
       hapticKey: null,
       lastHapticAt: null,
     };
@@ -602,7 +787,7 @@ export function createGame(opts) {
     if (!drag || e.pointerId !== drag.pointerId) return;
     e.preventDefault();
     const { x: fx, y: fy } = framePointFromClient(e.clientX, e.clientY);
-    updateDragVisual(fx, fy);
+    updateDragFromPointer(fx, fy);
   }
 
   function onPointerUp(e) {
@@ -615,6 +800,14 @@ export function createGame(opts) {
     }
 
     const active = drag;
+    // 松手用当前视觉位置再算一次投影，避免平滑滞后导致落点偏差
+    if (active) {
+      hover = hoverFromDragOrigin(
+        active.frameX,
+        active.frameY,
+        active.piece.matrix,
+      );
+    }
     const h = hover;
     drag = null;
 
@@ -730,14 +923,33 @@ export function createGame(opts) {
   let running = true;
   renderer.setAnimationLoop(() => {
     if (!running) return;
+    // 拖拽中：在 pointer 事件之间继续平滑插值，画面更连贯
+    if (drag) {
+      tickDragSmooth();
+      paint();
+    }
     renderer.render(scene, camera);
   });
+
+  /**
+   * 调参后刷新：布局类 rebuild，手感类只 paint（不中断当前拖拽）
+   * @param {{ layout?: boolean }} [opts]
+   */
+  function applyTune(opts = {}) {
+    if (opts.layout !== false) {
+      relayout();
+      return;
+    }
+    paint();
+    updateStatus();
+  }
 
   return {
     scene,
     camera,
     getLayout: () => layout,
     relayout,
+    applyTune,
     restart,
     dispose() {
       running = false;

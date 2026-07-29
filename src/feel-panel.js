@@ -1,12 +1,19 @@
 /**
- * 手机友好调参面板：可收起/展开，实时改 layout + 操作手感。
+ * 手机友好调参面板：滑条写入 tune，并通知游戏 relayout / repaint。
  */
-import { getTune, onTuneChange, resetTune, setTune, TUNE_FIELDS } from './game/tune.js';
+import {
+  getTune,
+  needsLayoutRelayout,
+  onTuneChange,
+  resetTune,
+  setTune,
+  TUNE_FIELDS,
+} from './game/tune.js';
 
 /**
  * @param {{
  *   mount?: HTMLElement,
- *   onChange?: () => void,
+ *   onChange?: (info: { key?: string, value?: number, needsLayout: boolean, reset?: boolean }) => void,
  * }} opts
  */
 export function createFeelPanel(opts = {}) {
@@ -41,8 +48,29 @@ export function createFeelPanel(opts = {}) {
   const body = document.createElement('div');
   body.className = 'feel-panel-body';
 
-  /** @type {Map<string, { range: HTMLInputElement, val: HTMLElement }>} */
+  /** @type {Map<string, { range: HTMLInputElement, val: HTMLElement, item: any, applyLocal: (v: number) => void }>} */
   const controls = new Map();
+
+  /** 滑条正在写入时，跳过 onTuneChange 回写，避免抢焦点/数值闪烁 */
+  let suppressSync = false;
+
+  /**
+   * @param {string} key
+   * @param {number} v
+   */
+  function commitValue(key, v) {
+    if (!Number.isFinite(v)) return;
+    suppressSync = true;
+    setTune({ [key]: v });
+    const ctl = controls.get(key);
+    ctl?.applyLocal(v);
+    suppressSync = false;
+    onChange({
+      key,
+      value: v,
+      needsLayout: needsLayoutRelayout(key),
+    });
+  }
 
   for (const group of TUNE_FIELDS) {
     const sec = document.createElement('section');
@@ -77,22 +105,19 @@ export function createFeelPanel(opts = {}) {
       const fmt = item.format || ((v) => String(v));
       const applyLocal = (v) => {
         val.textContent = fmt(v);
-        range.value = String(v);
+        // 仅当与当前滑条不一致时写回，减少 iOS 上 input 被打断
+        if (Number(range.value) !== v) {
+          range.value = String(v);
+        }
       };
 
-      range.addEventListener(
-        'input',
-        (e) => {
-          e.stopPropagation();
-          const v = Number(range.value);
-          setTune({ [item.key]: v });
-          applyLocal(v);
-          onChange();
-        },
-        { passive: true },
-      );
+      const onSlide = (e) => {
+        e.stopPropagation();
+        commitValue(item.key, Number(range.value));
+      };
+      range.addEventListener('input', onSlide);
+      range.addEventListener('change', onSlide);
 
-      // 避免拖滑块时触发游戏 pointer
       for (const ev of ['pointerdown', 'pointermove', 'pointerup', 'touchstart', 'touchmove']) {
         range.addEventListener(ev, (e) => e.stopPropagation(), { passive: true });
       }
@@ -109,10 +134,13 @@ export function createFeelPanel(opts = {}) {
   mount.appendChild(root);
 
   function syncFromTune() {
+    if (suppressSync) return;
     const t = getTune();
     for (const [key, ctl] of controls) {
       const v = t[key];
-      if (typeof v === 'number') ctl.applyLocal(v);
+      if (typeof v === 'number' && Number.isFinite(v)) {
+        ctl.applyLocal(v);
+      }
     }
   }
 
@@ -122,6 +150,7 @@ export function createFeelPanel(opts = {}) {
     sheet.hidden = !open;
     fab.setAttribute('aria-expanded', open ? 'true' : 'false');
     fab.hidden = open;
+    if (open) syncFromTune();
   }
 
   fab.addEventListener('click', (e) => {
@@ -139,16 +168,19 @@ export function createFeelPanel(opts = {}) {
   head.querySelector('[data-feel-reset]')?.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
+    suppressSync = true;
     resetTune();
+    suppressSync = false;
     syncFromTune();
-    onChange();
+    onChange({ needsLayout: true, reset: true });
   });
 
-  // 面板内操作不传到游戏
   sheet.addEventListener('pointerdown', (e) => e.stopPropagation());
   sheet.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
 
-  const unsub = onTuneChange(() => syncFromTune());
+  const unsub = onTuneChange(() => {
+    if (!suppressSync) syncFromTune();
+  });
   syncFromTune();
   setOpen(false);
 

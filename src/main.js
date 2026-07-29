@@ -62,7 +62,10 @@ async function boot() {
   const frameEl = document.getElementById('phone-frame') || stage;
   const feelPanel = createFeelPanel({
     mount: frameEl,
-    onChange: () => game.relayout(),
+    onChange: (info) => {
+      // setTune 已写入数据；布局类 rebuild，手感类只 repaint
+      game.applyTune({ layout: info?.needsLayout !== false });
+    },
   });
 
   if (haptics.isNativeIos()) {

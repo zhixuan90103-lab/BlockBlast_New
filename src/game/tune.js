@@ -39,6 +39,11 @@ function createDefaultTune() {
     FEEL_DRAG_OFFSET_Y_MAX: D.FEEL_DRAG_OFFSET_Y_MAX,
     FEEL_DRAG_LIFT_TRAVEL_CELLS: D.FEEL_DRAG_LIFT_TRAVEL_CELLS,
     FEEL_DRAG_LIFT_POWER: D.FEEL_DRAG_LIFT_POWER,
+    FEEL_POINTER_GAIN_MIN: D.FEEL_POINTER_GAIN_MIN,
+    FEEL_POINTER_GAIN_MAX: D.FEEL_POINTER_GAIN_MAX,
+    FEEL_POINTER_SPEED_REF: D.FEEL_POINTER_SPEED_REF,
+    FEEL_SMOOTH_TIME: D.FEEL_SMOOTH_TIME,
+    FEEL_GAIN_SMOOTH_TIME: D.FEEL_GAIN_SMOOTH_TIME,
     FEEL_DRAG_FOLLOW_GAIN_MAX: D.FEEL_DRAG_FOLLOW_GAIN_MAX,
     FEEL_BOARD_ENGAGE_OVERLAP: D.FEEL_BOARD_ENGAGE_OVERLAP,
     FEEL_HAPTIC_GHOST_INTENSITY: D.FEEL_HAPTIC_GHOST_INTENSITY,
@@ -47,6 +52,8 @@ function createDefaultTune() {
     FEEL_GHOST_ALPHA: D.FEEL_GHOST_ALPHA,
     FEEL_GHOST_OPEN_SNAP: D.FEEL_GHOST_OPEN_SNAP,
     FEEL_GHOST_EDGE_HOLD: D.FEEL_GHOST_EDGE_HOLD,
+    FEEL_GHOST_FAST_SPEED_RATIO: D.FEEL_GHOST_FAST_SPEED_RATIO,
+    FEEL_GHOST_FAST_EXIT_RATIO: D.FEEL_GHOST_FAST_EXIT_RATIO,
     FEEL_AXIS_DOMINANCE: D.FEEL_AXIS_DOMINANCE,
     /** 显示 tray 三等分区 */
     SHOW_TRAY_ZONES: D.SHOW_TRAY_ZONES,
@@ -68,10 +75,38 @@ export function getTuneDefaults() {
 }
 
 /**
+ * 改这些 key 需要 relayout（几何/布局）
+ * 其余手感/震动改 getTune() 即时生效，只需 repaint
+ */
+export const LAYOUT_TUNE_KEYS = new Set([
+  'FEEL_TRAY_SCALE',
+  'LAYOUT_BOARD_SCALE',
+  'LAYOUT_GAP_GRID_TRAY_CELLS',
+  'LAYOUT_BOARD_SHIFT_Y',
+  'LAYOUT_TRAY_SHIFT_Y',
+  'LAYOUT_TRAY_BAND_CELLS',
+  'LAYOUT_GRID_MARGIN_X',
+  'LAYOUT_HUD_SCORE_H',
+  'LAYOUT_GRID_TOP_GAP',
+  'LAYOUT_PAD_BOTTOM_EXTRA',
+  'BOARD_CELL_INSET',
+  'TRAY_CELL_INSET',
+  'SHOW_TRAY_ZONES',
+]);
+
+export function needsLayoutRelayout(key) {
+  return LAYOUT_TUNE_KEYS.has(key);
+}
+
+/**
  * @param {Partial<TuneState>} partial
  */
 export function setTune(partial) {
   Object.assign(tune, partial);
+  // 兼容旧字段
+  if (Object.prototype.hasOwnProperty.call(partial, 'FEEL_POINTER_GAIN_MAX')) {
+    tune.FEEL_DRAG_FOLLOW_GAIN_MAX = tune.FEEL_POINTER_GAIN_MAX;
+  }
   for (const fn of listeners) fn(tune);
 }
 
@@ -198,12 +233,44 @@ export const TUNE_FIELDS = [
         format: (v) => v.toFixed(2),
       },
       {
-        key: 'FEEL_DRAG_FOLLOW_GAIN_MAX',
-        label: '远距跟手增益',
-        min: 1,
-        max: 1.3,
+        key: 'FEEL_POINTER_GAIN_MIN',
+        label: '慢速跟手增益',
+        min: 0.7,
+        max: 1.1,
         step: 0.01,
         format: (v) => v.toFixed(2),
+      },
+      {
+        key: 'FEEL_POINTER_GAIN_MAX',
+        label: '快速跟手增益',
+        min: 1,
+        max: 1.8,
+        step: 0.01,
+        format: (v) => v.toFixed(2),
+      },
+      {
+        key: 'FEEL_POINTER_SPEED_REF',
+        label: '加速参考指速(格/秒)',
+        min: 3,
+        max: 20,
+        step: 0.5,
+        format: (v) => v.toFixed(1),
+      },
+      {
+        key: 'FEEL_SMOOTH_TIME',
+        label: '拖拽平滑(秒)',
+        min: 0,
+        max: 0.12,
+        step: 0.005,
+        format: (v) => (v <= 0 ? '关' : v.toFixed(3)),
+      },
+      {
+        key: 'FEEL_GAIN_SMOOTH_TIME',
+        label: '增益平滑(秒)',
+        min: 0,
+        max: 0.12,
+        step: 0.005,
+        format: (v) => (v <= 0 ? '关' : v.toFixed(3)),
       },
       {
         key: 'FEEL_BOARD_ENGAGE_OVERLAP',
@@ -265,9 +332,17 @@ export const TUNE_FIELDS = [
       },
       {
         key: 'FEEL_GHOST_EDGE_HOLD',
-        label: '边缘粘滞阈值',
+        label: '边缘粘滞(慢速)',
         min: 0.5,
         max: 2.5,
+        step: 0.05,
+        format: (v) => v.toFixed(2),
+      },
+      {
+        key: 'FEEL_GHOST_FAST_SPEED_RATIO',
+        label: '快精模式指速比',
+        min: 0.2,
+        max: 1,
         step: 0.05,
         format: (v) => v.toFixed(2),
       },

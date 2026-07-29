@@ -40,10 +40,22 @@ export const FEEL_DRAG_OFFSET_X = 0;
  * 自拿起点「向上」移动达到该格数时抬升到 MAX。
  */
 export const FEEL_DRAG_LIFT_TRAVEL_CELLS = 2.2;
-/** 抬升曲线幂 */
-export const FEEL_DRAG_LIFT_POWER = 1.15;
-/** 跟手增益上限 */
-export const FEEL_DRAG_FOLLOW_GAIN_MAX = 1.06;
+/** 抬升曲线幂（真机调参） */
+export const FEEL_DRAG_LIFT_POWER = 1.35;
+/**
+ * 触控跟手增益（借鉴 macOS 指针加速思想：慢精、快远）
+ * 按「指速 cells/s」映射，积分位移，减轻大范围拖动手指行程。
+ */
+/** 慢速时增益（真机调参） */
+export const FEEL_POINTER_GAIN_MIN = 0.95;
+/** 快速时增益（真机调参） */
+export const FEEL_POINTER_GAIN_MAX = 1.6;
+/**
+ * 指速参考（格/秒）：达到此速度附近增益接近 MAX。
+ */
+export const FEEL_POINTER_SPEED_REF = 8;
+/** @deprecated 兼容旧名：等同快速增益 */
+export const FEEL_DRAG_FOLLOW_GAIN_MAX = FEEL_POINTER_GAIN_MAX;
 /**
  * 投影介入：形状最底一排占格与棋盘有重叠即显示 ghost。
  * 保留该常量供调参；默认 0 = 只要进入立刻显示。
@@ -51,7 +63,7 @@ export const FEEL_DRAG_FOLLOW_GAIN_MAX = 1.06;
 export const FEEL_BOARD_ENGAGE_OVERLAP = 0;
 
 /** 投影换格瞬态震动（iOS Core Haptics playTransient）— 真机调参 */
-export const FEEL_HAPTIC_GHOST_INTENSITY = 0.55;
+export const FEEL_HAPTIC_GHOST_INTENSITY = 0.6;
 export const FEEL_HAPTIC_GHOST_SHARPNESS = 0.2;
 /** 同一/连发去重冷却（ms） */
 export const FEEL_HAPTIC_GHOST_COOLDOWN_MS = 108;
@@ -64,20 +76,33 @@ export const FEEL_BOARD_SCALE = 1.0;
 /** 拖起额外放大；正版与盘格 1:1，不额外 pop */
 export const FEEL_DRAG_SCALE_POP = 1.0;
 export const FEEL_FOLLOW = 1;
-export const FEEL_SMOOTH_TIME = 0;
+/**
+ * 拖拽视觉平滑时间常数（秒）。指数趋近目标位置。
+ * 0 = 无延迟直跟；略 >0 减抖。过大 → 拖影延迟感。
+ */
+export const FEEL_SMOOTH_TIME = 0.012;
+/** 指速增益自身再平滑（秒）；过大会让加速「慢半拍」 */
+export const FEEL_GAIN_SMOOTH_TIME = 0.018;
 /** 合法投影：本色半透；非法不显示投影 */
 export const FEEL_GHOST_ALPHA = 0.15;
 /**
  * 开阔区投影换格阈值（格）。相邻方向仍可放置 → 约 0.5 即跟手。
- * 大片连续空位时更灵敏。
  */
 export const FEEL_GHOST_OPEN_SNAP = 0.5;
 /**
- * 边缘区投影换格 / 取消阈值（格）。
- * 「边缘」= 该方向一步不可放（盘界或已有块顶住；左右夹缝仅能塞下当前块等）。
- * 小范围避免误滑；约 1.5。
+ * 边缘区慢速粘滞阈值（格）。
+ * 仅「慢速 + 朝不可放方向」时使用，防贴边误滑；快速时不生效。
  */
 export const FEEL_GHOST_EDGE_HOLD = 1.5;
+/**
+ * 指速 ≥ 参考指速 × 该系数 → 投影进入「快速精准」模式（free 吸附，不贴边 1.5）。
+ * 慢下来后回到边缘粘滞。
+ */
+export const FEEL_GHOST_FAST_SPEED_RATIO = 0.45;
+/**
+ * 快速模式退出滞回：指速 < 进入阈值 × 该系数才回慢速贴边。
+ */
+export const FEEL_GHOST_FAST_EXIT_RATIO = 0.55;
 /**
  * 轴向主导：|Δ横| 与 |Δ竖| 差超过该值（格）才锁定主轴，
  * 避免横向拖时竖直噪声让投影上下跳。
