@@ -102,16 +102,17 @@ function mkRoundedPlane(w, h, col, op, zz, cornerRatio = CELL_CORNER_RATIO) {
   // 每 mesh 独立 clone，rebuild dispose 不会毁掉缓存 / 其他 mesh
   const geo = getRoundedRectGeometry(w, h, cornerRatio).clone();
   geo.userData.sharedTemplate = false;
-  const mesh = new THREE.Mesh(
-    geo,
-    new THREE.MeshBasicMaterial({
-      color: col,
-      transparent: op < 0.999,
-      opacity: op,
-      depthWrite: op >= 0.999,
-      side: THREE.DoubleSide,
-    }),
-  );
+  const mat = new THREE.MeshBasicMaterial({
+    color: col,
+    transparent: op < 0.999,
+    opacity: op,
+    depthWrite: op >= 0.999,
+    side: THREE.DoubleSide,
+  });
+  // 供 view 动画恢复 opacity，禁止整块 setHex 抹平分层色
+  mat.userData.baseOpacity = op;
+  mat.userData.baseColor = col;
+  const mesh = new THREE.Mesh(geo, mat);
   mesh.position.z = zz;
   return mesh;
 }

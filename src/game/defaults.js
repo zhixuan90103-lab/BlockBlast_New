@@ -140,9 +140,26 @@ export const FEEL_DRAG_FOLLOW_GAIN_MAX = FEEL_POINTER_GAIN_MAX;
  */
 export const FEEL_BOARD_ENGAGE_OVERLAP = 0;
 
-/** 投影换格瞬态震动（iOS Core Haptics playTransient）— 真机调参 */
-export const FEEL_HAPTIC_GHOST_INTENSITY = 0.6;
-export const FEEL_HAPTIC_GHOST_SHARPNESS = 0.2;
+/** 投影换格瞬态震动（普通挪格，无消） */
+export const FEEL_HAPTIC_GHOST_INTENSITY = 0.55;
+export const FEEL_HAPTIC_GHOST_SHARPNESS = 0.18;
+/** 投影到「将消」格：与普通挪格区分（手感面板标定） */
+export const FEEL_HAPTIC_CLEAR_PREVIEW_INTENSITY = 0.65;
+export const FEEL_HAPTIC_CLEAR_PREVIEW_SHARPNESS = 0.25;
+/**
+ * 消除手感 = 1 瞬态 + 间隔 + 1 段连续震
+ * 连续震在时长内从「起」线性插值到「末」；起/末强度皆 ≈0 或时长 0 则不做连续。
+ */
+export const FEEL_HAPTIC_CLEAR_FX_TRANSIENT_INTENSITY = 0.9;
+export const FEEL_HAPTIC_CLEAR_FX_TRANSIENT_SHARPNESS = 0.35;
+/** 瞬态结束后到连续震开始的间隔（ms） */
+export const FEEL_HAPTIC_CLEAR_FX_GAP_MS = 80;
+/** 连续震时长（ms） */
+export const FEEL_HAPTIC_CLEAR_FX_DURATION_MS = 100;
+export const FEEL_HAPTIC_CLEAR_FX_START_INTENSITY = 0.5;
+export const FEEL_HAPTIC_CLEAR_FX_START_SHARPNESS = 0;
+export const FEEL_HAPTIC_CLEAR_FX_END_INTENSITY = 0.1;
+export const FEEL_HAPTIC_CLEAR_FX_END_SHARPNESS = 0;
 /** 同一/连发去重冷却（ms） */
 export const FEEL_HAPTIC_GHOST_COOLDOWN_MS = 108;
 /**
@@ -199,7 +216,12 @@ export const FEEL_PRECLEAR_HIGHLIGHT = true;
 export const FEEL_SNAP_ONLY_VALID = true;
 export const FEEL_COMMIT_MS = 90;
 export const FEEL_REJECT_MS = 180;
-export const FEEL_CLEAR_MS = 160;
+/** 落子消行动画时长（ms）：自落子处向外依次收缩 → 清格 */
+export const FEEL_CLEAR_MS = 220;
+/** 消行错峰：时间轴前段用于按距离排序启动（0–1） */
+export const FEEL_CLEAR_STAGGER = 0.42;
+/** 单格收缩占用时间轴比例（越小缩得越快） */
+export const FEEL_CLEAR_SHRINK = 0.32;
 export const FEEL_INPUT_LOCK_MS = 150;
 export const FEEL_HIT_SLOP = 0.2;
 export const FEEL_PICKUP_SCALE_MS = 100;

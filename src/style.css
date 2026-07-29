@@ -383,6 +383,57 @@ button:active {
   pointer-events: none;
 }
 
+/* 左下角：手感1 / 手感2 快捷切换 */
+.feel-preset-bar {
+  pointer-events: auto;
+  position: absolute;
+  left: max(10px, env(safe-area-inset-left, 0px));
+  bottom: max(12px, calc(env(safe-area-inset-bottom, 0px) + 8px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 2;
+}
+
+.feel-preset-btn {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  min-width: 72px;
+  min-height: 40px;
+  padding: 8px 14px;
+  background: rgba(42, 36, 88, 0.88);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background 0.15s ease, transform 0.1s ease, border-color 0.15s ease;
+}
+
+.feel-preset-btn:active {
+  transform: scale(0.96);
+}
+
+.feel-preset-btn.is-active {
+  background: linear-gradient(180deg, #7c6cf0, #5b4bc4);
+  border-color: rgba(255, 213, 74, 0.55);
+  box-shadow: 0 0 0 1px rgba(255, 213, 74, 0.25), 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.feel-preset-btn.is-saved {
+  background: linear-gradient(180deg, #3dd68c, #1faa63);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.feel-panel.is-open .feel-preset-bar {
+  /* 面板展开时抬高，避免被 sheet 挡住 */
+  bottom: max(12px, calc(env(safe-area-inset-bottom, 0px) + min(72%, 560px) + 10px));
+}
+
 .feel-panel-fab {
   pointer-events: auto;
   position: absolute;

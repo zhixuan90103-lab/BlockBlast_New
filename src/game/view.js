@@ -10,6 +10,7 @@ import {
 } from './block-mesh.js';
 import {
   COLOR,
+  FEEL_CLEAR_SHRINK,
   FEEL_DRAG_ALPHA,
   GRID,
 } from './defaults.js';
@@ -32,8 +33,12 @@ export function createBoardView(scene) {
 
   /** @type {THREE.Object3D[]} */
   let staticMeshes = [];
+  /** 8×8 空槽：rebuild 后常驻，永不因落子/消行 dispose */
   /** @type {Map<string, THREE.Group>} */
   const boardCells = new Map();
+  /** 落子填充块（叠在空槽之上）；消行只动这块 */
+  /** @type {Map<string, THREE.Group>} */
+  const boardFills = new Map();
   /** @type {THREE.Object3D[]} */
   let dynamicMeshes = [];
 
@@ -65,7 +70,24 @@ export function createBoardView(scene) {
   /**
    * @param {ReturnType<import('./layout.js').computeLayout>} layout
    */
+  function clearBoardFills() {
+    for (const fill of boardFills.values()) {
+      staticRoot.remove(fill);
+      disposeObject(fill);
+    }
+    boardFills.clear();
+  }
+
+  function removeBoardFill(key) {
+    const fill = boardFills.get(key);
+    if (!fill) return;
+    staticRoot.remove(fill);
+    disposeObject(fill);
+    boardFills.delete(key);
+  }
+
   function rebuildStatic(layout) {
+    clearBoardFills();
     clearList(staticMeshes, staticRoot);
     boardCells.clear();
 
@@ -150,116 +172,135 @@ export function createBoardView(scene) {
       mats[2].transparent = false;
     }
     group.userData.isEmpty = true;
+    group.scale.set(1, 1, 1);
+    group.rotation.z = 0;
+    group.visible = true;
   }
 
   /**
-   * 把空格换成立体块（或更新色）
+   * 在常驻空槽之上叠/换填充块（不碰空槽本身）
+   * @param {string} key
+   * @param {THREE.Group} slot 空槽
+   * @param {number} color
+   * @param {number} [opacity]
    */
-  function ensureFilled(group, color, opacity = 1) {
-    const pos = group.position.clone();
-    const parent = group.parent;
-    const size = group.userData.cellSize || 20;
-    const ud = {
-      col: group.userData.col,
-      row: group.userData.row,
-      kind: 'cell',
+  function ensureBoardFill(key, slot, color, opacity = 1) {
+    let block = boardFills.get(key);
+    if (block && block.userData.fillColor === color) {
+      return block;
+    }
+    if (block) removeBoardFill(key);
+
+    const size = slot.userData.cellSize || 20;
+    block = createFilledCell(size, color, opacity, 0.02);
+    block.position.set(slot.position.x, slot.position.y, 0.02);
+    block.userData = {
+      col: slot.userData.col,
+      row: slot.userData.row,
+      kind: 'filledOverlay',
       cellSize: size,
       isEmpty: false,
       fillColor: color,
     };
-
-    // dispose old
-    parent.remove(group);
-    const idx = staticMeshes.indexOf(group);
-    if (idx >= 0) staticMeshes.splice(idx, 1);
-    disposeObject(group);
-
-    const block = createFilledCell(size, color, opacity, 0.01);
-    block.position.copy(pos);
-    block.userData = { ...ud, cellSize: size };
-    parent.add(block);
-    staticMeshes.push(block);
+    staticRoot.add(block);
+    boardFills.set(key, block);
     return block;
+  }
+
+  /**
+   * 将消格集合
+   * @param {{ rows?: number[], cols?: number[] } | null} preclear
+   */
+  function preclearKeySet(preclear) {
+    /** @type {Set<string>} */
+    const set = new Set();
+    if (!preclear) return set;
+    for (const r of preclear.rows || []) {
+      for (let c = 0; c < GRID; c++) set.add(`${r},${c}`);
+    }
+    for (const c of preclear.cols || []) {
+      for (let r = 0; r < GRID; r++) set.add(`${r},${c}`);
+    }
+    return set;
   }
 
   /**
    * @param {(number|null)[][]} cells
    * @param {{ rows: number[], cols: number[] } | null} preclear
-   * @param {{ row: number, col: number, color?: number }[] | null} ghostCells
-   * @param {boolean} ghostValid
+   * @param {number} [nowMs] 用于将消旋转预警
+   * @param {{
+   *   cells?: { row: number, col: number, delay01?: number, spin?: number }[],
+   *   t01?: number,
+   *   sweep?: { fromLeft?: boolean, fromTop?: boolean },
+   * } | null} [clearFx]
    */
-  function paintBoard(cells, preclear, ghostCells, ghostValid) {
-    // We need layout cell size - stored on first cell
+  function paintBoard(cells, preclear, nowMs = 0, clearFx = null) {
+    const pcSet = preclearKeySet(preclear);
+    // 小幅度绕自身中心 Z 轴摆动（弧度）
+    // 小幅、更快：角频率 0.038，幅度约 ±0.055 rad
+    const wobble =
+      pcSet.size > 0 ? Math.sin((nowMs || 0) * 0.038) * 0.055 : 0;
+    const clearT = clearFx?.t01 ?? -1;
+    /** @type {Map<string, { delay: number, spin: number }>} */
+    const clearMeta = new Map();
+    if (clearFx?.cells?.length) {
+      for (const c of clearFx.cells) {
+        clearMeta.set(`${c.row},${c.col}`, {
+          delay: c.delay01 ?? 0,
+          spin: c.spin ?? 0,
+        });
+      }
+    }
+    const shrinkSpan = Math.max(0.12, Math.min(0.6, FEEL_CLEAR_SHRINK));
+    // 消行旋转峰值（弧度，约 ±42°），方向与扫过一致
+    const clearSpinMax = 0.74;
+
     for (let row = 0; row < GRID; row++) {
       for (let col = 0; col < GRID; col++) {
         const key = `${row},${col}`;
-        let group = boardCells.get(key);
-        if (!group) continue;
+        const slot = boardCells.get(key);
+        if (!slot) continue;
+
+        // 空槽始终在、始终满尺寸（消行/预警只动上层填充）
+        paintEmptyStyle(slot);
 
         const v = cells[row][col];
-        if (v != null) {
-          if (group.userData.isEmpty !== false || group.userData.fillColor !== v) {
-            group = ensureFilled(group, v, 1);
-            boardCells.set(key, group);
-          }
-        } else if (group.userData.isEmpty === false) {
-          // was filled → rebuild empty
-          const pos = group.position.clone();
-          const parent = group.parent;
-          const size = group.userData.cellSize || 24;
-          const ud = { col, row, kind: 'cell', cellSize: size };
-          parent.remove(group);
-          const i = staticMeshes.indexOf(group);
-          if (i >= 0) staticMeshes.splice(i, 1);
-          disposeObject(group);
-          const empty = createEmptyCell(size, {
-            stroke: COLOR.cellEmptyStroke,
-            fill: COLOR.cellEmpty,
-            inner: COLOR.cellEmptyInner,
-          });
-          empty.position.copy(pos);
-          empty.userData = { ...ud, isEmpty: true };
-          parent.add(empty);
-          staticMeshes.push(empty);
-          boardCells.set(key, empty);
-          group = empty;
-        } else {
-          paintEmptyStyle(group);
+        if (v == null) {
+          removeBoardFill(key);
+          continue;
+        }
+
+        const fill = ensureBoardFill(key, slot, v, 1);
+        // 恢复 transform；禁止整块改色（会抹掉 bevel/高光）
+        fill.scale.set(1, 1, 1);
+        fill.rotation.z = 0;
+        fill.position.set(slot.position.x, slot.position.y, 0.02);
+        fill.visible = true;
+
+        // 仅「已落子且属于将满行/列」才预警（空槽、无关块不预警）
+        const inPreclear = pcSet.has(key);
+        const meta = clearMeta.get(key);
+
+        if (meta && clearT >= 0) {
+          // 一边→另一边：缩 + 与方向一致的旋转
+          const { delay, spin } = meta;
+          const localT =
+            clearT <= delay
+              ? 0
+              : Math.min(1, (clearT - delay) / shrinkSpan);
+          // ease-in：前半稍留形，后半加速收完
+          const ease = localT * localT;
+          const shrink = Math.max(0.06, 1 - ease * 0.98);
+          fill.scale.set(shrink, shrink, 1);
+          // spin: +1 / -1，与行/列扫过方向一致
+          fill.rotation.z = spin * ease * clearSpinMax;
+        } else if (inPreclear) {
+          // 将消预警：中心小幅旋转 + 轻微放大（仅填充）
+          fill.rotation.z = wobble;
+          fill.scale.set(1.01, 1.01, 1);
         }
       }
     }
-
-    // preclear
-    if (preclear && (preclear.rows.length || preclear.cols.length)) {
-      const mark = (r, c) => {
-        const g = boardCells.get(`${r},${c}`);
-        if (!g) return;
-        g.traverse((o) => {
-          if (o.isMesh && o.material && g.userData.isEmpty !== false) {
-            // empty cells glow
-          }
-        });
-        if (g.userData.isEmpty !== false) {
-          const main = g.userData.mainMat;
-          if (main) {
-            main.color.setHex(COLOR.preclear);
-            main.opacity = 0.45;
-            main.transparent = true;
-          }
-        } else {
-          g.traverse((o) => {
-            if (o.isMesh && o.material) {
-              o.material.opacity = Math.min(o.material.opacity ?? 1, 0.75);
-              o.material.transparent = true;
-            }
-          });
-        }
-      };
-      for (const r of preclear.rows) for (let c = 0; c < GRID; c++) mark(r, c);
-      for (const c of preclear.cols) for (let r = 0; r < GRID; r++) mark(r, c);
-    }
-
-    // ghost 改在 render() 动态层用 createFilledCell 画，空格改色在木底上看不清
   }
 
   /**
@@ -312,16 +353,27 @@ export function createBoardView(scene) {
     }
   }
 
-  /** 仅合法落点：本色半透投影 */
-  function addBoardGhost(ghostCells, layout) {
+  /**
+   * 合法落点投影：与实体同色半透；将消时仅对「会参与消除」的投影格加旋转预警
+   * @param {{ row: number, col: number, color?: number }[]} ghostCells
+   * @param {ReturnType<import('./layout.js').computeLayout>} layout
+   * @param {Set<string> | null} [clearKeys] 将满行/列格 key；null=不预警
+   * @param {number} [nowMs]
+   */
+  function addBoardGhost(ghostCells, layout, clearKeys = null, nowMs = 0) {
     if (!ghostCells?.length) return;
     const { cell, cellFill, frameW, frameH, boardCellInset } = layout;
     const size = Math.max(2, cellFill ?? cell * (1 - 2 * (boardCellInset ?? 0.012)));
     const z = 0.12;
-    const alpha = getTune().FEEL_GHOST_ALPHA;
+    const alpha = getTune().FEEL_GHOST_ALPHA ?? 0.15;
+    const wobble = Math.sin(nowMs * 0.038) * 0.055;
 
     for (const gcell of ghostCells) {
-      if (gcell.row < 0 || gcell.col < 0 || gcell.row >= GRID || gcell.col >= GRID) continue;
+      if (gcell.row < 0 || gcell.col < 0 || gcell.row >= GRID || gcell.col >= GRID) {
+        continue;
+      }
+      const key = `${gcell.row},${gcell.col}`;
+      const inClear = clearKeys?.has(key);
       const rect = layout.cellRect(gcell.col, gcell.row);
       const center = frameToThree(
         rect.x + rect.w / 2,
@@ -329,18 +381,20 @@ export function createBoardView(scene) {
         frameW,
         frameH,
       );
+      // 投影统一本色半透，不改金/变色
       const col = gcell.color ?? 0x93c5fd;
       const ghost = createFilledCell(size, col, alpha, z);
       ghost.position.set(center.x, center.y, z);
+      // 仅将消格：旋转 + 轻微放大
+      if (inClear) {
+        ghost.rotation.z = wobble;
+        ghost.scale.set(1.01, 1.01, 1);
+      }
       dynamicRoot.add(ghost);
       dynamicMeshes.push(ghost);
     }
   }
 
-  /**
-   * @param {number} cellPitch 格心距（棋盘 cell 或 tray.cell）
-   * @param {number} cellInset 单侧内缩比例（与 pitch 相乘得缝）
-   */
   /**
    * 摆放区阴影：一块 mesh、polyomino 整体轮廓（格间无缝合并，不是多格拼影）。
    */
@@ -416,8 +470,9 @@ export function createBoardView(scene) {
     z = 0.05,
   ) {
     const { rows, cols } = matrixSize(matrix);
-    // 内容边长：inset 很小 → 邻格几乎贴齐（正版摆放物内缝极细）
-    const fill = cellPitch * (1 - 2 * Math.min(cellInset, 0.01));
+    // 与盘面 cellFill 同一公式：pitch * (1 - 2*inset)，落子/拖/ tray 样式一致
+    const inset = Number.isFinite(cellInset) ? cellInset : 0.004;
+    const fill = cellPitch * (1 - 2 * inset);
     const size = Math.max(2, fill * scale);
     const pieceW = cols * cellPitch;
     const pieceH = rows * cellPitch;
@@ -446,10 +501,13 @@ export function createBoardView(scene) {
 
   /**
    * @param {object} state
+   * @param {object} [state.clearFx]
+   * @param {number} [state.nowMs]
    */
   function render(state) {
     clearList(dynamicMeshes, dynamicRoot);
-    const { layout, cells, tray, drag, hover } = state;
+    const { layout, cells, tray, drag, hover, clearFx = null, nowMs = performance.now() } =
+      state;
     if (!layout || layout.cell < 2) return;
 
     const { cell, boardCellInset, frameW, frameH } = layout;
@@ -459,6 +517,7 @@ export function createBoardView(scene) {
     let ghostCells = null;
     let ghostValid = false;
     let preclear = null;
+    let willClear = false;
 
     if (hover && drag?.piece) {
       const { matrix, cellColors } = drag.piece;
@@ -477,14 +536,35 @@ export function createBoardView(scene) {
       }
       ghostValid = hover.valid;
       preclear = hover.valid ? hover.preclear : null;
+      willClear = !!(preclear && preclear.count > 0);
     }
 
-    paintBoard(cells, preclear, ghostValid ? ghostCells : null, ghostValid);
+    const clearT01 =
+      clearFx && clearFx.duration > 0
+        ? Math.min(1, Math.max(0, (nowMs - clearFx.start) / clearFx.duration))
+        : -1;
 
-    // 棋盘投影：仅合法落点；非法隐藏（松手仍 reject）
+    // 仅 count>0 时传 preclear；paintBoard 只对「已落子且在将消行列」转预警
+    paintBoard(
+      cells,
+      willClear ? preclear : null,
+      nowMs,
+      clearFx && clearT01 >= 0
+        ? {
+            cells: clearFx.cells,
+            t01: clearT01,
+            sweep: clearFx.sweep,
+          }
+        : null,
+    );
+
+    // 投影：统一本色；仅将消格加旋转
     if (drag?.piece && ghostValid && ghostCells?.length) {
-      addBoardGhost(ghostCells, layout);
+      const clearKeys = willClear ? preclearKeySet(preclear) : null;
+      addBoardGhost(ghostCells, layout, clearKeys, nowMs);
     }
+
+
 
     // 调试：底栏三等分点击区
     if (getTune().SHOW_TRAY_ZONES >= 0.5) {
@@ -551,7 +631,9 @@ export function createBoardView(scene) {
 
   function dispose() {
     clearList(dynamicMeshes, dynamicRoot);
+    clearBoardFills();
     clearList(staticMeshes, staticRoot);
+    boardCells.clear();
     scene.remove(root);
   }
 

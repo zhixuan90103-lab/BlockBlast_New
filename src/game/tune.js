@@ -6,7 +6,7 @@ import * as D from './defaults.js';
 
 /** @typedef {ReturnType<typeof createDefaultTune>} TuneState */
 
-function createDefaultTune() {
+export function createDefaultTune() {
   return {
     // —— 布局 / 尺寸 ——
     /** tray 块单格 / 盘格 */
@@ -52,6 +52,16 @@ function createDefaultTune() {
     FEEL_BOARD_ENGAGE_OVERLAP: D.FEEL_BOARD_ENGAGE_OVERLAP,
     FEEL_HAPTIC_GHOST_INTENSITY: D.FEEL_HAPTIC_GHOST_INTENSITY,
     FEEL_HAPTIC_GHOST_SHARPNESS: D.FEEL_HAPTIC_GHOST_SHARPNESS,
+    FEEL_HAPTIC_CLEAR_PREVIEW_INTENSITY: D.FEEL_HAPTIC_CLEAR_PREVIEW_INTENSITY,
+    FEEL_HAPTIC_CLEAR_PREVIEW_SHARPNESS: D.FEEL_HAPTIC_CLEAR_PREVIEW_SHARPNESS,
+    FEEL_HAPTIC_CLEAR_FX_TRANSIENT_INTENSITY: D.FEEL_HAPTIC_CLEAR_FX_TRANSIENT_INTENSITY,
+    FEEL_HAPTIC_CLEAR_FX_TRANSIENT_SHARPNESS: D.FEEL_HAPTIC_CLEAR_FX_TRANSIENT_SHARPNESS,
+    FEEL_HAPTIC_CLEAR_FX_GAP_MS: D.FEEL_HAPTIC_CLEAR_FX_GAP_MS,
+    FEEL_HAPTIC_CLEAR_FX_DURATION_MS: D.FEEL_HAPTIC_CLEAR_FX_DURATION_MS,
+    FEEL_HAPTIC_CLEAR_FX_START_INTENSITY: D.FEEL_HAPTIC_CLEAR_FX_START_INTENSITY,
+    FEEL_HAPTIC_CLEAR_FX_START_SHARPNESS: D.FEEL_HAPTIC_CLEAR_FX_START_SHARPNESS,
+    FEEL_HAPTIC_CLEAR_FX_END_INTENSITY: D.FEEL_HAPTIC_CLEAR_FX_END_INTENSITY,
+    FEEL_HAPTIC_CLEAR_FX_END_SHARPNESS: D.FEEL_HAPTIC_CLEAR_FX_END_SHARPNESS,
     FEEL_HAPTIC_GHOST_COOLDOWN_MS: D.FEEL_HAPTIC_GHOST_COOLDOWN_MS,
     FEEL_GHOST_ALPHA: D.FEEL_GHOST_ALPHA,
     FEEL_GHOST_OPEN_SNAP: D.FEEL_GHOST_OPEN_SNAP,
@@ -343,11 +353,11 @@ export const TUNE_FIELDS = [
     ],
   },
   {
-    group: '震动(投影换格)',
+    group: '震动(投影/将消/消除)',
     items: [
       {
         key: 'FEEL_HAPTIC_GHOST_INTENSITY',
-        label: '瞬态强度',
+        label: '普通挪格·强度',
         min: 0,
         max: 1,
         step: 0.05,
@@ -355,7 +365,87 @@ export const TUNE_FIELDS = [
       },
       {
         key: 'FEEL_HAPTIC_GHOST_SHARPNESS',
-        label: '瞬态锐度',
+        label: '普通挪格·锐度',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        format: (v) => v.toFixed(2),
+      },
+      {
+        key: 'FEEL_HAPTIC_CLEAR_PREVIEW_INTENSITY',
+        label: '将消格·强度',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        format: (v) => v.toFixed(2),
+      },
+      {
+        key: 'FEEL_HAPTIC_CLEAR_PREVIEW_SHARPNESS',
+        label: '将消格·锐度',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        format: (v) => v.toFixed(2),
+      },
+      {
+        key: 'FEEL_HAPTIC_CLEAR_FX_TRANSIENT_INTENSITY',
+        label: '消除·瞬态强度(0关)',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        format: (v) => (v <= 0.001 ? '关' : v.toFixed(2)),
+      },
+      {
+        key: 'FEEL_HAPTIC_CLEAR_FX_TRANSIENT_SHARPNESS',
+        label: '消除·瞬态锐度',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        format: (v) => v.toFixed(2),
+      },
+      {
+        key: 'FEEL_HAPTIC_CLEAR_FX_GAP_MS',
+        label: '消除·瞬态→连续间隔ms',
+        min: 0,
+        max: 200,
+        step: 5,
+        format: (v) => `${Math.round(v)}ms`,
+      },
+      {
+        key: 'FEEL_HAPTIC_CLEAR_FX_DURATION_MS',
+        label: '消除·连续时长ms(0关)',
+        min: 0,
+        max: 500,
+        step: 10,
+        format: (v) => (v <= 0 ? '关' : `${Math.round(v)}ms`),
+      },
+      {
+        key: 'FEEL_HAPTIC_CLEAR_FX_START_INTENSITY',
+        label: '消除·连续起强度',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        format: (v) => v.toFixed(2),
+      },
+      {
+        key: 'FEEL_HAPTIC_CLEAR_FX_START_SHARPNESS',
+        label: '消除·连续起锐度',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        format: (v) => v.toFixed(2),
+      },
+      {
+        key: 'FEEL_HAPTIC_CLEAR_FX_END_INTENSITY',
+        label: '消除·连续末强度',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        format: (v) => v.toFixed(2),
+      },
+      {
+        key: 'FEEL_HAPTIC_CLEAR_FX_END_SHARPNESS',
+        label: '消除·连续末锐度',
         min: 0,
         max: 1,
         step: 0.05,
@@ -363,7 +453,7 @@ export const TUNE_FIELDS = [
       },
       {
         key: 'FEEL_HAPTIC_GHOST_COOLDOWN_MS',
-        label: '去重冷却ms',
+        label: '换格去重冷却ms',
         min: 0,
         max: 120,
         step: 4,

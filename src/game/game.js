@@ -14,10 +14,12 @@ import {
 import {
   COLOR,
   FEEL_CLEAR_MS,
+  FEEL_CLEAR_STAGGER,
   FEEL_COMMIT_MS,
   FEEL_HIT_SLOP,
   FEEL_INPUT_LOCK_MS,
   FEEL_REJECT_MS,
+  GRID,
   SHOW_DEBUG_STATUS,
 } from './defaults.js';
 import {
@@ -81,6 +83,19 @@ export function createGame(opts) {
 
   /** @type {null | { originRow: number, originCol: number, valid: boolean, preclear: any }} */
   let hover = null;
+
+  /**
+   * 落子消行动画：先播特效再真正 clearLines
+   * @type {null | {
+   *   lines: { rows: number[], cols: number[], count: number },
+   *   cells: { row: number, col: number, color: number, delay01: number, spin: number }[],
+   *   sweep: { fromLeft: boolean, fromTop: boolean, epicRow: number, epicCol: number },
+   *   start: number,
+   *   duration: number,
+   *   cellsPlaced: number,
+   * }}
+   */
+  let clearFx = null;
 
   let inputLockedUntil = 0;
   let gameOver = false;
@@ -149,6 +164,8 @@ export function createGame(opts) {
   function restart() {
     drag = null;
     hover = null;
+    clearFx = null;
+    ghostHaptics.onClearFxEnd?.();
     grid.reset();
     scoreState.reset();
     clearPendingDealPlan();
@@ -193,8 +210,138 @@ export function createGame(opts) {
           }
         : null,
       hover,
+      clearFx,
+      nowMs: performance.now(),
     });
     syncHud();
+  }
+
+  /**
+   * 收集将消格；缩放/扫光沿行或列「一边→另一边」。
+   * 从哪一边起：看本次落子质心更靠近哪条边（左/右、上/下）。
+   * @param {{ rows: number[], cols: number[] }} lines
+   * @param {number[][]} matrix 刚落下的 polyomino
+   * @param {number} originRow
+   * @param {number} originCol
+   * @returns {{
+   *   cells: { row: number, col: number, color: number, delay01: number, spin: number }[],
+   *   sweep: { fromLeft: boolean, fromTop: boolean, epicRow: number, epicCol: number },
+   * }}
+   */
+  function collectLineCells(lines, matrix, originRow, originCol) {
+    /** @type {{ row: number, col: number, color: number, delay01: number, spin: number }[]} */
+    const out = [];
+    const seen = new Set();
+    const add = (r, c) => {
+      const k = `${r},${c}`;
+      if (seen.has(k)) return;
+      seen.add(k);
+      const color = grid.cells[r][c];
+      if (color == null) return;
+      out.push({ row: r, col: c, color, delay01: 0, spin: 0 });
+    };
+    for (const r of lines.rows) for (let c = 0; c < 8; c++) add(r, c);
+    for (const c of lines.cols) for (let r = 0; r < 8; r++) add(r, c);
+
+    /** @type {{ r: number, c: number }[]} */
+    const anchors = [];
+    if (matrix?.length) {
+      for (let r = 0; r < matrix.length; r++) {
+        for (let c = 0; c < matrix[r].length; c++) {
+          if (matrix[r][c]) anchors.push({ r: originRow + r, c: originCol + c });
+        }
+      }
+    }
+    if (!anchors.length) anchors.push({ r: originRow, c: originCol });
+
+    let epicRow = 0;
+    let epicCol = 0;
+    for (const a of anchors) {
+      epicRow += a.r;
+      epicCol += a.c;
+    }
+    epicRow /= anchors.length;
+    epicCol /= anchors.length;
+
+    const mid = (GRID - 1) / 2;
+    // 更靠近哪一边，就从那一边扫向对边
+    const fromLeft = epicCol <= mid;
+    const fromTop = epicRow <= mid;
+    // 旋转与扫过方向一致：左→右/上→下 为负 Z（顺时针感），对边为正
+    const spinRow = fromLeft ? -1 : 1;
+    const spinCol = fromTop ? -1 : 1;
+
+    const rowSet = new Set(lines.rows);
+    const colSet = new Set(lines.cols);
+    const last = GRID - 1;
+    const stagger = Math.min(0.85, Math.max(0, FEEL_CLEAR_STAGGER));
+
+    for (const cell of out) {
+      /** @type {{ t: number, spin: number }[]} */
+      const axis = [];
+      // 行：左→右 或 右→左
+      if (rowSet.has(cell.row)) {
+        axis.push({
+          t: fromLeft ? cell.col / last : (last - cell.col) / last,
+          spin: spinRow,
+        });
+      }
+      // 列：上→下 或 下→上
+      if (colSet.has(cell.col)) {
+        axis.push({
+          t: fromTop ? cell.row / last : (last - cell.row) / last,
+          spin: spinCol,
+        });
+      }
+      // 行列交叉格取较早一侧，旋转跟该侧方向
+      if (!axis.length) {
+        cell.delay01 = 0;
+        cell.spin = 0;
+      } else {
+        let best = axis[0];
+        for (let i = 1; i < axis.length; i++) {
+          if (axis[i].t < best.t) best = axis[i];
+        }
+        cell.delay01 = best.t * stagger;
+        cell.spin = best.spin;
+      }
+    }
+    out.sort((a, b) => a.delay01 - b.delay01 || a.row - b.row || a.col - b.col);
+    return {
+      cells: out,
+      sweep: { fromLeft, fromTop, epicRow, epicCol },
+    };
+  }
+
+  function finishClearFx() {
+    if (!clearFx) return;
+    const { lines, cellsPlaced } = clearFx;
+    const linesCleared = grid.clearLines(lines);
+    clearFx = null;
+    // 不强制掐断连续震：时长由 FEEL_HAPTIC_CLEAR_FX_DURATION_MS 自管；
+    // 仅 restart 时 onClearFxEnd 强制 stop。
+    scoreState.onPlace({
+      cellsPlaced,
+      linesCleared,
+      boardEmpty: grid.isEmpty(),
+    });
+    if (trayEmpty()) {
+      scoreState.onTrayRefill();
+      fillTray();
+    }
+    checkGameOver();
+    paint();
+    updateStatus();
+  }
+
+  function tickClearFx() {
+    if (!clearFx) return;
+    const now = performance.now();
+    if (now - clearFx.start >= clearFx.duration) {
+      finishClearFx();
+      return;
+    }
+    paint();
   }
 
   function framePointFromClient(clientX, clientY) {
@@ -275,7 +422,7 @@ export function createGame(opts) {
   }
 
   function isLocked() {
-    return performance.now() < inputLockedUntil;
+    return performance.now() < inputLockedUntil || clearFx != null;
   }
 
   function onPointerDown(e) {
@@ -343,25 +490,39 @@ export function createGame(opts) {
       tray[active.trayIndex] = null;
 
       const lines = grid.findFullLines();
-      let linesCleared = 0;
       if (lines.count > 0) {
-        linesCleared = grid.clearLines(lines);
-        lockInput(Math.max(FEEL_INPUT_LOCK_MS, FEEL_CLEAR_MS));
+        // 消行动画 + 消除震动（1 瞬态 + 间隔 + 连续震）；结束后再清格/计分/刷 tray
+        {
+          const collected = collectLineCells(
+            lines,
+            active.piece.matrix,
+            h.originRow,
+            h.originCol,
+          );
+          clearFx = {
+            lines,
+            cells: collected.cells,
+            sweep: collected.sweep,
+            start: performance.now(),
+            duration: FEEL_CLEAR_MS,
+            cellsPlaced,
+          };
+          ghostHaptics.onClearFxStart?.();
+        }
+        lockInput(Math.max(FEEL_INPUT_LOCK_MS, FEEL_CLEAR_MS + 40));
       } else {
         lockInput(FEEL_COMMIT_MS);
+        scoreState.onPlace({
+          cellsPlaced,
+          linesCleared: 0,
+          boardEmpty: grid.isEmpty(),
+        });
+        if (trayEmpty()) {
+          scoreState.onTrayRefill();
+          fillTray();
+        }
+        checkGameOver();
       }
-
-      scoreState.onPlace({
-        cellsPlaced,
-        linesCleared,
-        boardEmpty: grid.isEmpty(),
-      });
-
-      if (trayEmpty()) {
-        scoreState.onTrayRefill();
-        fillTray();
-      }
-      checkGameOver();
     } else {
       lockInput(FEEL_REJECT_MS);
     }
@@ -460,6 +621,7 @@ export function createGame(opts) {
   renderer.setAnimationLoop(() => {
     if (!running) return;
     if (drag) tickDragFrame();
+    else if (clearFx) tickClearFx();
     renderer.render(scene, camera);
   });
 

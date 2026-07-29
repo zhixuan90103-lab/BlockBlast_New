@@ -1,11 +1,17 @@
 /**
  * 手机友好调参面板：滑条写入 tune，并通知游戏 relayout / repaint。
+ * 左下角「手感1 / 手感2」快速切换预设（长按保存当前参数到该槽）。
  */
+import {
+  applyFeelPreset,
+  getActiveFeelPresetId,
+  saveFeelPreset,
+  setActiveFeelPresetId,
+} from './game/feel-presets.js';
 import {
   getTune,
   needsLayoutRelayout,
   onTuneChange,
-  resetTune,
   setTune,
   TUNE_FIELDS,
 } from './game/tune.js';
@@ -13,7 +19,7 @@ import {
 /**
  * @param {{
  *   mount?: HTMLElement,
- *   onChange?: (info: { key?: string, value?: number, needsLayout: boolean, reset?: boolean }) => void,
+ *   onChange?: (info: { key?: string, value?: number, needsLayout: boolean, reset?: boolean, preset?: string }) => void,
  * }} opts
  */
 export function createFeelPanel(opts = {}) {
@@ -24,6 +30,25 @@ export function createFeelPanel(opts = {}) {
   root.id = 'feel-panel';
   root.className = 'feel-panel is-collapsed';
   root.setAttribute('aria-label', '手感调参');
+
+  /** 左下角手感预设快捷切换 */
+  const presetBar = document.createElement('div');
+  presetBar.className = 'feel-preset-bar';
+  presetBar.setAttribute('aria-label', '手感预设');
+
+  /** @type {Map<'1'|'2', HTMLButtonElement>} */
+  const presetBtns = new Map();
+  for (const id of /** @type {const} */ (['1', '2'])) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'feel-preset-btn';
+    btn.dataset.preset = id;
+    btn.textContent = `手感${id}`;
+    btn.title = '点击切换 · 长按保存当前参数到此槽';
+    btn.setAttribute('aria-pressed', 'false');
+    presetBtns.set(id, btn);
+    presetBar.appendChild(btn);
+  }
 
   const fab = document.createElement('button');
   fab.type = 'button';
@@ -130,7 +155,7 @@ export function createFeelPanel(opts = {}) {
   }
 
   sheet.append(head, body);
-  root.append(fab, sheet);
+  root.append(presetBar, fab, sheet);
   mount.appendChild(root);
 
   function syncFromTune() {
@@ -144,12 +169,101 @@ export function createFeelPanel(opts = {}) {
     }
   }
 
+  /**
+   * @param {'1' | '2' | null} id
+   */
+  function highlightPreset(id) {
+    for (const [pid, btn] of presetBtns) {
+      const on = pid === id;
+      btn.classList.toggle('is-active', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+  }
+
+  /**
+   * @param {'1' | '2'} id
+   */
+  function switchPreset(id) {
+    suppressSync = true;
+    applyFeelPreset(id);
+    suppressSync = false;
+    highlightPreset(id);
+    syncFromTune();
+    onChange({ needsLayout: true, preset: id });
+  }
+
+  /**
+   * @param {'1' | '2'} id
+   * @param {HTMLButtonElement} btn
+   */
+  function flashSaved(btn, id) {
+    const prev = btn.textContent;
+    btn.textContent = '已存';
+    btn.classList.add('is-saved');
+    setTimeout(() => {
+      btn.textContent = prev;
+      btn.classList.remove('is-saved');
+    }, 700);
+    // 保存后视为当前槽
+    setActiveFeelPresetId(id);
+    highlightPreset(id);
+  }
+
+  for (const [id, btn] of presetBtns) {
+    let longPressTimer = /** @type {ReturnType<typeof setTimeout> | null} */ (null);
+    let longPressed = false;
+
+    const clearLong = () => {
+      if (longPressTimer != null) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+    };
+
+    btn.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      longPressed = false;
+      clearLong();
+      longPressTimer = setTimeout(() => {
+        longPressed = true;
+        saveFeelPreset(id);
+        flashSaved(btn, id);
+        if (navigator.vibrate) {
+          try {
+            navigator.vibrate(12);
+          } catch {
+            /* ignore */
+          }
+        }
+      }, 520);
+    });
+    btn.addEventListener('pointerup', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      clearLong();
+      if (!longPressed) switchPreset(id);
+    });
+    btn.addEventListener('pointercancel', () => {
+      clearLong();
+      longPressed = false;
+    });
+    btn.addEventListener('pointerleave', () => {
+      // 手指滑出取消长按，避免误存
+      if (!longPressed) clearLong();
+    });
+    // 阻止冒泡到棋盘拖拽
+    for (const ev of ['touchstart', 'touchend', 'click']) {
+      btn.addEventListener(ev, (e) => e.stopPropagation(), { passive: false });
+    }
+  }
+
   function setOpen(open) {
     root.classList.toggle('is-collapsed', !open);
     root.classList.toggle('is-open', open);
     sheet.hidden = !open;
     fab.setAttribute('aria-expanded', open ? 'true' : 'false');
     fab.hidden = open;
+    // 面板打开时仍可看到左下角预设
     if (open) syncFromTune();
   }
 
@@ -168,15 +282,14 @@ export function createFeelPanel(opts = {}) {
   head.querySelector('[data-feel-reset]')?.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    suppressSync = true;
-    resetTune();
-    suppressSync = false;
-    syncFromTune();
-    onChange({ needsLayout: true, reset: true });
+    // 重置 = 回到手感1出厂（defaults）；switchPreset 内已 onChange
+    switchPreset('1');
   });
 
   sheet.addEventListener('pointerdown', (e) => e.stopPropagation());
   sheet.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+  presetBar.addEventListener('pointerdown', (e) => e.stopPropagation());
+  presetBar.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
 
   const unsub = onTuneChange(() => {
     if (!suppressSync) syncFromTune();
@@ -184,11 +297,15 @@ export function createFeelPanel(opts = {}) {
   syncFromTune();
   setOpen(false);
 
+  // 启动：默认手感1；若上次选过手感2则恢复
+  switchPreset(getActiveFeelPresetId());
+
   return {
     root,
     open: () => setOpen(true),
     close: () => setOpen(false),
     sync: syncFromTune,
+    switchPreset,
     dispose() {
       unsub();
       root.remove();
