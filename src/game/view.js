@@ -3,7 +3,7 @@
  */
 import * as THREE from 'three';
 import {
-  BOARD_CORNER_CELLS,
+  CELL_CORNER_RATIO,
   createEmptyCell,
   createFilledCell,
   getRoundedRectGeometry,
@@ -75,13 +75,21 @@ export function createBoardView(scene) {
     /** 棋盘格内容边长（决定格间距观感） */
     const size = Math.max(2, cellFill);
 
-    // 棋盘底板：圆角外框 + 圆角盘面
+    // 棋盘底板：外框/底层圆角与空格一致（外扩平行圆角，避免角上「大圆角被空格压住」）
     {
-      const framePad = cell * 0.1;
+      const framePad = cell * 0.08;
       const c = frameToThree(grid.x + grid.w / 2, grid.y + grid.h / 2, frameW, frameH);
+      // 空格圆角半径（与 createEmptyCell 相同）
+      const cellR = size * CELL_CORNER_RATIO;
+      // 底层（盘面）：略大于 8×8 内容区，圆角 = 空格圆角 + 微边
+      const innerW = grid.w + cell * 0.02;
+      const innerH = grid.h + cell * 0.02;
+      const innerR = cellR + cell * 0.01;
+      // 浅色外框：再外扩 pad，圆角同步 +pad（平行圆角）
       const outerW = grid.w + framePad * 2;
       const outerH = grid.h + framePad * 2;
-      const outerR = cell * BOARD_CORNER_CELLS;
+      const outerR = innerR + framePad;
+
       const outer = new THREE.Mesh(
         getRoundedRectGeometry(
           outerW,
@@ -94,9 +102,6 @@ export function createBoardView(scene) {
       staticRoot.add(outer);
       staticMeshes.push(outer);
 
-      const innerW = grid.w + cell * 0.02;
-      const innerH = grid.h + cell * 0.02;
-      const innerR = cell * (BOARD_CORNER_CELLS * 0.85);
       const bg = new THREE.Mesh(
         getRoundedRectGeometry(
           innerW,

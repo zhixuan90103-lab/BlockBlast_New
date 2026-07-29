@@ -4,10 +4,12 @@
  */
 import * as THREE from 'three';
 
-/** 圆角半径相对短边比例 */
+/** 空格/方块圆角半径相对短边比例 */
 export const CELL_CORNER_RATIO = 0.12;
-/** 棋盘外框圆角半径 ≈ 该值 × cell */
-export const BOARD_CORNER_CELLS = 0.32;
+/**
+ * @deprecated 棋盘外框圆角已与 CELL_CORNER_RATIO 联动（view 内平行外扩）
+ */
+export const BOARD_CORNER_CELLS = 0.12;
 
 function shade(hex, f) {
   const r = Math.min(255, Math.max(0, Math.round(((hex >> 16) & 255) * f)));
