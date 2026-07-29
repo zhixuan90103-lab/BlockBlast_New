@@ -166,6 +166,7 @@ export function createGame(opts) {
     hover = null;
     clearFx = null;
     ghostHaptics.onClearFxEnd?.();
+    boardView.clearAllDebris?.();
     grid.reset();
     scoreState.reset();
     clearPendingDealPlan();
@@ -622,6 +623,8 @@ export function createGame(opts) {
     if (!running) return;
     if (drag) tickDragFrame();
     else if (clearFx) tickClearFx();
+    // 碎裂粒子可活过 clearFx，需继续 paint 做重力
+    else if (boardView.hasActiveDebris?.()) paint();
     renderer.render(scene, camera);
   });
 

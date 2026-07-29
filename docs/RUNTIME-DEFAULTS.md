@@ -1,6 +1,8 @@
 # 运行时 defaults.js 快照
 
-> 由文档整理生成；**以 `src/game/defaults.js` 为准**。生成日 2026-07-29。
+> ⚠️ **摘录可能滞后。** 任何冲突以 `src/game/defaults.js` 为准。  
+> 手感/消行/震动说明见 [FEEL-DESIGN.md](./FEEL-DESIGN.md)；文档索引 [README.md](./README.md)。  
+> 生成日 2026-07-29（后续改 defaults 后请择机同步本节，或只保留本警告）。
 
 ```js
 /**

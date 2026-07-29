@@ -1,7 +1,7 @@
 /**
  * 手感预设槽 1 / 2：
- * - 手感1 = 当前 defaults 标定（出厂 / 游戏默认）
- * - 手感2 = 同底 + 截图操作幅度参数（其余相同）
+ * - 手感1 = 当前 defaults（含震动标定）
+ * - 手感2 = 同底震动 + 不同操作幅度；震动与手感1 共用 defaults
  * localStorage 长按可覆盖；键带版本避免旧存档污染出厂定义。
  */
 import {
@@ -10,14 +10,15 @@ import {
   setTune,
 } from './tune.js';
 
-const PRESET_VER = 'v3';
+/** 升版本：震动默认更新后避免旧 localStorage 盖住出厂值 */
+const PRESET_VER = 'v9';
 const STORAGE_PRESET = (id) => `bb_feel_preset_${PRESET_VER}_${id}`;
 const STORAGE_ACTIVE = `bb_feel_preset_${PRESET_VER}_active`;
 
 /** @typedef {import('./tune.js').TuneState} TuneState */
 
 /**
- * 手感1：完整 defaults（当前调好的参数）
+ * 手感1：完整 defaults（当前调好的参数，含震动）
  * @returns {TuneState}
  */
 function createPreset1Factory() {
@@ -25,12 +26,12 @@ function createPreset1Factory() {
 }
 
 /**
- * 手感2：与手感1相同，仅操作抬升/跟手用截图值
+ * 手感2：与手感1 **相同震动**；仅操作抬升/跟手不同
  * @returns {TuneState}
  */
 function createPreset2Factory() {
   const t = createDefaultTune();
-  // 截图「操作手感」
+  // 操作幅度（截图）；震动字段继承 defaults，与手感1 一致
   t.FEEL_DRAG_OFFSET_Y_MIN = -2.5;
   t.FEEL_DRAG_OFFSET_Y_MAX = -2.5;
   t.FEEL_DRAG_LIFT_TRAVEL_CELLS = 1.0;

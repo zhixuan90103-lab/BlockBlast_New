@@ -1,76 +1,80 @@
 # AGENTS.md — 给 AI / 新窗口的工程说明
 
 > **本文件是打开本仓库时的第一入口。**  
-> 人类可读说明见 [README.md](./README.md)，完整技术细节见 [docs/ENGINEERING.md](./docs/ENGINEERING.md)。
+> 文档索引：[docs/README.md](./docs/README.md) · 人类上手：[README.md](./README.md)
 
 ## 一句话
 
-本仓库是 **空的可复用技术底座**：**Three.js + WebGPU + Vite + Capacitor iOS + 自研 NativeHaptics**。  
-只提供「能 dev / 能打包 / 能真机 / 能震动 / 桌面≈手机布局」。**不含任何具体游戏玩法。**
+**Block Blast! Classic 手感向复刻**，技术底座为 **Three.js WebGPU + Vite + Capacitor iOS + NativeHaptics**。  
+目标是操作/布局/发块体感，而非商店化完整产品。
 
-## 绝对路径（本机）
+## 文档从哪读
 
-```
-/Users/wangzhixuan/Documents/Threejs_Work/Project_基础/three-webgpu-cap-shell
-```
+| 优先 | 文档 |
+|------|------|
+| 1 | 本文件 + [docs/README.md](./docs/README.md) |
+| 2 手感/消行/震动 | [docs/FEEL-DESIGN.md](./docs/FEEL-DESIGN.md) |
+| 3 发块 | [docs/DEAL-DESIGN.md](./docs/DEAL-DESIGN.md) |
+| 4 踩坑史 | [docs/PROJECT-HISTORY.md](./docs/PROJECT-HISTORY.md) |
+| 5 底座 | [docs/ENGINEERING.md](./docs/ENGINEERING.md) |
 
-## 入口地图（改代码从这里找）
+**常量真源**：`src/game/defaults.js`（不要只信 RUNTIME-DEFAULTS 摘录）。
 
-| 职责 | 文件 | 说明 |
-|------|------|------|
-| **Web 启动** | `index.html` → `src/main.js` | HTML 壳 + 最小 demo 场景（可整段替换） |
-| **WebGPU** | `src/create-renderer.js` | `WebGPURenderer`，按手机框尺寸 |
-| **视口 / 手机框** | `src/viewport.js` + `src/style.css` | 393×852 letterbox；native 全屏 |
-| **Safe Area** | `src/style.css` `#hud` + `viewport.js` `DESIGN_SAFE` | 灵动岛 / Home 条 |
-| **震动 JS** | `src/native-haptics.js` | Capacitor `registerPlugin('NativeHaptics')` |
-| **震动 iOS** | `plugins/native-haptics/*.swift` → 同步进 `ios/App/App/` | Core Haptics |
-| **插件注册** | `BridgeViewController.swift` | `registerPluginInstance(NativeHapticsPlugin())` |
-| **Capacitor** | `capacitor.config.json` | `webDir: dist`，`contentInset: never` |
-| **构建** | `vite.config.js` | **必须** `base: './'` |
-| **iOS 注入脚本** | `scripts/bootstrap-ios.mjs` | 首次/重装 iOS 时注入 Swift |
+## 入口地图
+
+| 职责 | 文件 |
+|------|------|
+| Web 启动 | `index.html` → `src/main.js` → `createGame` |
+| 规则编排 | `src/game/game.js` |
+| 手感 | `src/game/feel/*` · `feel-presets.js` · `feel-panel.js` |
+| 渲染 | `src/game/view.js` · `block-mesh.js` · `layout.js` |
+| 发块 | `src/game/deal/*` |
+| 常量 / 调参 | `defaults.js` · `tune.js` |
+| WebGPU | `src/create-renderer.js` |
+| 视口 | `src/viewport.js` · `style.css` |
+| 震动 JS | `src/native-haptics.js` |
+| 震动 iOS | `plugins/native-haptics/*.swift` |
 
 ## 常用命令
 
 ```bash
 npm install
-npm run dev          # http://127.0.0.1:5190/ （vite.config port 5190）
-npm run build        # → dist/
-npm run cap:sync     # build + cap sync ios
-npm run cap:open     # Xcode
-npm run ios          # sync + open
-npm run ios:bootstrap  # 无 ios 时 add + 注入插件 + sync
+npm run dev          # http://127.0.0.1:5190/
+npm run build
+npm run cap:sync     # 口语「打包」：build + cap sync ios
+npm run cap:open
+npm run ios:bootstrap
 ```
 
-## 硬性约定（违反会坏）
+## 硬性约定
 
-1. **`vite` `base: './'`** — Capacitor 不能用 `/assets/...` 绝对路径。  
-2. **`capacitor` `webDir: "dist"`** 与 Vite `outDir` 一致。  
-3. **`ios.contentInset: "never"`** — Safe Area 只走 CSS `env(safe-area-inset-*)`，禁止系统双重 inset。  
-4. **交互 UI 只放在 `#hud`** — 使用 `--safe-*`；3D 可全屏铺在 `#stage`。  
-5. **业务震动曲线不要写进 shell** — shell 只提供 `prepare / playTransient / start|update|stopContinuous`。  
-6. **改设计尺寸** — 同步改 `viewport.js` 的 `DESIGN_*` 与 `style.css` 的 `393 / 852`。  
-7. **改 appId** — `capacitor.config.json` → `npm run cap:sync` → Xcode Signing 确认 Bundle ID / Team。
+1. Vite **`base: './'`**（Capacitor 相对路径）。  
+2. **`webDir: "dist"`** 与 Vite outDir 一致。  
+3. **`ios.contentInset: "never"`**，Safe Area 只走 CSS `env(...)`。  
+4. 交互 UI 在 `#hud`；3D 在 `#stage`。  
+5. **业务震动曲线**写在 `feel/haptics-ghost.js`，原生层只提供 transient/continuous API。  
+6. 改布局尺寸：同步 `viewport.js` DESIGN_* 与 CSS 393/852（若仍用设计框）。  
+7. 圆角几何：BufferGeometry + clone；共享模板勿 dispose。  
+8. 文档：改手感/消行后更新 **FEEL-DESIGN** 与 **PROJECT-HISTORY** 相关节。
 
-## DOM 结构（勿拆）
+## DOM
 
 ```
-#letterbox          ← 桌面黑边；native 全屏底
-  #phone-frame      ← 唯一「屏幕」：393:852 或真机全屏
-    #stage          ← WebGPU canvas 挂载点
-    #hud            ← 安全区内 UI（pointer-events 分层）
+#letterbox > #phone-frame > (#stage | #hud | #feel-panel)
 ```
 
-## 新会话建议动作
+左下角：**手感1 / 手感2**；右下角：**调参**。
 
-1. 读本文件 + `docs/ENGINEERING.md`  
-2. `npm run dev` 验证 WebGPU + 手机框  
-3. 业务只改 `src/main.js`（或新增 `src/game/*`），**保留** renderer / viewport / haptics  
-4. 上真机：`npm run cap:sync` → Xcode Team → Run  
+## 新会话建议
 
-## 刻意不做的事
+1. 读本文件 + `docs/README.md`  
+2. 动手感读 `FEEL-DESIGN.md`；动发块读 `DEAL-DESIGN.md`  
+3. `npm run dev` 或 `cap:sync` 真机  
+4. 默认手感槽 = **手感1**（= defaults）
 
-- 具体游戏玩法（本仓库保持空壳 + 最小 demo）  
-- TypeScript（当前纯 JS，可后加）  
-- Android  
-- WebGL 静默回退（无 WebGPU 则明确报错）  
-- 业务向震动曲线（只保留底层 API）  
+## 刻意边界
+
+- 不商业化（商店/广告/账号）  
+- 无旋转、无重力（Classic）  
+- 无 Android 优先  
+- 无 WebGL 静默回退  

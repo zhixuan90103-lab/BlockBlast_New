@@ -9,10 +9,11 @@
 
 | 文档 | 用途 |
 |------|------|
-| [FEEL-DESIGN.md](./FEEL-DESIGN.md) | 手感问题 → 不变量（P1–P16）速查 |
+| [README.md](./README.md) | **文档索引与规范** |
+| [FEEL-DESIGN.md](./FEEL-DESIGN.md) | 手感问题 → 不变量（含 P17–P20 消行/震动/预设） |
+| [DEAL-DESIGN.md](./DEAL-DESIGN.md) | 发块阶段 |
 | [ENGINEERING.md](./ENGINEERING.md) | 底座、Capacitor、WebGPU、安全区 |
 | [ENTRYPOINTS.md](./ENTRYPOINTS.md) | 命令与启动链 |
-| `../research/DEFAULTS.md` 等 | 规则/手感冻结前的检索结论 |
 | `src/game/defaults.js` | **运行时常量真源** |
 
 ---
@@ -71,26 +72,29 @@ src/
   create-renderer.js      # WebGPURenderer
   viewport.js             # 设计尺寸、safe 探针、scheduleStableLayout
   native-haptics.js       # 震动桥（无业务曲线）
-  feel-panel.js           # 真机调参：布局 rebuild / 手感 paint
+  feel-panel.js           # 调参滑条 + 手感1/2 快捷切换
   game/
-    game.js               # 编排：规则循环、指针、commit（~460 行级）
+    game.js               # 编排：指针、commit、clearFx
     defaults.js           # 常量真源
-    tune.js               # 运行时覆盖
+    tune.js               # 运行时覆盖 + TUNE_FIELDS
+    feel-presets.js       # 手感1/2 工厂与 localStorage
     feel/
       drag-session.js     # 拿起、指速增益、位移积分、短平滑
-      ghost-policy.js     # engage、free±1、快/慢模、轴锁
-      haptics-ghost.js    # 合法投影换格震动
+      ghost-policy.js     # engage、free±1、快/慢模、轴锁、preclear
+      haptics-ghost.js    # 换格 + 消除（瞬态+连续）
+    deal/                 # 阶段发块、bag、形状节奏
     grid.js · forms.js · pieces.js · score.js
     layout.js · view.js · block-mesh.js
 plugins/native-haptics/   # Swift 真源；bootstrap 注入 iOS
+docs/                     # 见 docs/README.md 索引
 ```
 
 **职责边界：**
 
 - `game.js`：状态与事件编排，不堆投影公式。
 - `feel/*`：可单测的手感策略，不碰 mesh 创建。
-- `view.js` / `block-mesh.js`：几何与材质；圆角用 **BufferGeometry + mesh clone**，不用 ShapeGeometry 当 WebGPU 索引源。
-- `defaults.js` ↔ `tune.js` ↔ `feel-panel.js`：一处默认、运行时覆盖、面板重置回真源。
+- `view.js`：空槽常驻 + 填充层 + 消行缩转；`block-mesh` 圆角 **BufferGeometry + clone**。
+- `defaults.js` ↔ `tune.js` ↔ `feel-panel` / `feel-presets`：一处默认、运行时覆盖、预设槽。
 
 ---
 
@@ -264,37 +268,126 @@ Git 远程（历史会话约定）：`zhixuan90103-lab/BlockBlast_New`。
 
 1. **魔法数导出**：ghost 内部 lag 阈值等 → 命名常量 + 可选进 tune 面板。  
 2. **单测**：`ghost-policy` / `drag-session` 纯函数测例。  
-3. **Git**：feel 拆分 + EDGE_HOLD 1.3 + 最新 defaults 若有未推送提交需整理。  
-4. **反馈层**：消行飞散、SFX 等 M3 类体验（清行逻辑已有，特效可加强）。  
-5. **文档同步**：research 与 shell 的 DEFAULTS 若有漂移，以 `defaults.js` 为准回写 research。
+3. **反馈层**：消行 SFX、更丰富粒子等（视觉缩转 + 震动配方已落地）。  
+4. **文档同步**：`RUNTIME-DEFAULTS.md` 易滞后；以 `defaults.js` 为准。  
+5. **research/**：上级研究材料不在 shell git 内，结论以代码与本 HISTORY 为准。
 
 ---
 
-## 9. NotebookLM 使用说明
+## 9. 消行反馈 · 震动 · 预设（2026-07-29 迭代）
 
-**统一笔记：** [Block Blast](https://notebooklm.google.com/)（ID `8ca93db7-f307-46f2-8949-a4fce2447e38`）  
+对应 commit 主题：`feat: clear cascade feel, haptics recipe, and feel presets`（`0a98709` 及后续微调）。  
+设计细则：[FEEL-DESIGN.md](./FEEL-DESIGN.md) §3–§5。
+
+### 9.1 问题 → 修改
+
+| 现象 | 原因 | 修改 |
+|------|------|------|
+| 消行压暗 | opacity 随 t 淡出 | 去掉压暗，只缩+转 |
+| 消行时空格消失 | filled 替换 empty，无底层空槽 | `boardCells` 常驻空槽 + `boardFills` 上层填充 |
+| 缩时像整格隐藏 | 同上 + 曾叠 burst | 去掉 burst；缩填充露空槽 |
+| 缩放无顺序 | 全体同 t 缩 | 按落子质心决定**一边→另一边** delay |
+| 缺旋转感 | 仅 wobble | 与扫过同向 spin，峰值约 ±42° |
+| 曾加扫光 | 产品不要 | 已移除扫光 |
+| 消除震过多/过单 | 阶梯脉冲 / 仅瞬态 / 仅 continuous | **1 瞬态 + GAP + 连续（起→末插值）** |
+| 将消 vs 普通换格无差 | 同强度 | PREVIEW 与 GHOST 分参（面板可调） |
+| 要两套操作幅度 | 单 defaults | **手感1/2** 左下角切换；默认手感1 |
+| 落子改色变扁 | 整块 recolor | 不碰 bevel 层 color |
+
+### 9.2 架构补充
+
+```
+view.js
+  boardCells  → 8×8 空槽（rebuild 后常驻）
+  boardFills  → 有子时叠在空槽上；clear 只动 fill
+
+game.js
+  clearFx → collectLineCells(delay01, spin) + sweep 方向元数据
+  finishClearFx → clearLines + 计分
+
+haptics-ghost.js
+  onHover(换格/将消) · onClearFxStart(消除配方) · onClearFxEnd
+
+feel-presets.js
+  手感1 = defaults · 手感2 = 同底 + 截图操作幅度
+```
+
+### 9.3 震动默认（摘要，以 defaults 为准；手感1/2 共用）
+
+| 项 | 约值 |
+|----|------|
+| 普通挪格 I/S | 0.70 / 0.20 |
+| 将消格 I/S | 0.80 / 0.30 |
+| 消除瞬态 I/S | 1.00 / 0.45 |
+| GAP / 连续时长 | 30ms / 50ms |
+| 连续起 I/S | 0.55 / 0.15 |
+| 连续末 I/S | 0.10 / 0 |
+
+### 9.4 手感2 操作差异（其余 = 手感1）
+
+| 键 | 手感2 |
+|----|--------|
+| OFFSET_Y_MIN/MAX | -2.5 / -2.5 |
+| LIFT_TRAVEL / POWER | 1.0 / 1.0 |
+| GAIN_MIN/MAX | 0.9 / 1.6 |
+| SPEED_REF | 6.0 |
+
+### 9.5 决策
+
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| 空槽 | 常驻底层 | 消行可读、无「格子没了」 |
+| 消行方向 | 单轴一边到另一边 | 对齐「扫过」体感，非径向爆炸 |
+| 消除震 | 瞬态+连续配方 | 既有确认点又有长度；参数全进面板 |
+| 预设 | 手感1 默认 | 标定真源在 defaults；手感2 对比幅度 |
+
+---
+
+## 10. NotebookLM 使用说明
+
+**统一笔记：** [Block Blast](https://notebooklm.google.com/notebook/8ca93db7-f307-46f2-8949-a4fce2447e38)（ID `8ca93db7-f307-46f2-8949-a4fce2447e38`）  
 **去噪目录：** `research/NLM-SOURCE-CATALOG.md`（标题前缀 A/B/C 表示权重）
 
-冲突裁决：手感/当前行为 → PROJECT-HISTORY + FEEL-DESIGN + RUNTIME-DEFAULTS；规则证据 → SOURCES-EFFECTIVE + 开源 raw；研究 vs runtime → **runtime**。
+### 冲突裁决
 
-问答提示：
+| 问题类型 | 优先资料 |
+|----------|----------|
+| 手感 / 消行 / 震动 / 预设（当前行为） | **带日期的新版** `A · FEEL-DESIGN …(2026-07-29…)` · `A · PROJECT-HISTORY …§9…` · Note「迭代纪要」 |
+| 常量数值 | 代码 `defaults.js`（RUNTIME-DEFAULTS 可能滞后） |
+| 规则证据 / 开源对照 | A · rules / scoring / SOURCES-EFFECTIVE + 开源 raw |
+| 文档从哪读 | `A · docs 索引与规范 README` |
 
-- 「为什么投影不能远吸？」→ P5 / 第 3.1 节  
-- 「拖累改哪个参数？」→ 第 4.1 增益与平滑  
-- 「震动为什么两下？」→ P9  
-- 「模块怎么分的？」→ 第 2.1 节  
+旧版无日期后缀的 FEEL-DESIGN / PROJECT-HISTORY 仅作历史，与 v2 冲突时 **以日期版为准**。
+
+### 问答提示
+
+- 「为什么投影不能远吸？」→ P5  
+- 「拖累改哪个参数？」→ 增益与平滑 / 操作幅度  
+- 「震动为什么两下？」→ P9 换格去重  
+- 「消行为什么还有空格？」→ P17 空槽常驻  
+- 「缩放从哪边开始？」→ P18 落子近边  
+- 「消除震是瞬态还是连续？」→ P19 配方  
+- 「手感1/2 差在哪？默认哪个？」→ P20 · 默认手感1  
+- 「模块怎么分的？」→ 架构 §2.1 / §9.2  
+
+### 同步约定
+
+仓库 `docs/*` 大改后：`notebooklm source add` 新版 A 源 + 可选 `note create` 迭代纪要；不必删旧源（用标题日期区分）。
 
 ---
 
-## 10. 相关路径速查
+## 11. 相关路径速查
 
 | 路径 | 说明 |
 |------|------|
+| `docs/README.md` | 文档索引与规范 |
 | `src/game/defaults.js` | 规则 + FEEL + LAYOUT + COLOR |
 | `src/game/tune.js` | 运行时覆盖与 LAYOUT 键列表 |
-| `src/feel-panel.js` | 移动端调参 UI |
+| `src/game/feel-presets.js` | 手感1/2 |
+| `src/feel-panel.js` | 调参 UI + 预设按钮 |
 | `src/game/feel/*` | 手感策略 |
-| `src/game/game.js` | 编排 |
+| `src/game/game.js` | 编排 · clearFx |
+| `src/game/view.js` | 空槽/填充 · 消行动画 |
 | `src/viewport.js` | 稳定布局 / safe |
 | `plugins/native-haptics/` | iOS 震动真源 |
-| `../research/` | 立项研究文档集 |
+| `../research/` | 立项研究文档集（多数不在 shell git） |

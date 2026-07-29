@@ -10,6 +10,14 @@ import {
 } from './block-mesh.js';
 import {
   COLOR,
+  FEEL_CLEAR_DEBRIS_COUNT,
+  FEEL_CLEAR_DEBRIS_GRAVITY,
+  FEEL_CLEAR_DEBRIS_LIFE_MS,
+  FEEL_CLEAR_DEBRIS_SPEED,
+  FEEL_CLEAR_SHAKE_AMP_MAX,
+  FEEL_CLEAR_SHAKE_AMP_MIN,
+  FEEL_CLEAR_SHAKE_AMP_STEP,
+  FEEL_CLEAR_SHAKE_HZ,
   FEEL_CLEAR_SHRINK,
   FEEL_DRAG_ALPHA,
   GRID,
@@ -28,8 +36,11 @@ export function createBoardView(scene) {
 
   const staticRoot = new THREE.Group();
   const dynamicRoot = new THREE.Group();
+  /** 碎裂粒子：不随 dynamic 每帧 clear，独立物理更新 */
+  const debrisRoot = new THREE.Group();
   root.add(staticRoot);
   root.add(dynamicRoot);
+  root.add(debrisRoot);
 
   /** @type {THREE.Object3D[]} */
   let staticMeshes = [];
@@ -41,6 +52,28 @@ export function createBoardView(scene) {
   const boardFills = new Map();
   /** @type {THREE.Object3D[]} */
   let dynamicMeshes = [];
+
+  /**
+   * @typedef {{
+   *   mesh: THREE.Mesh,
+   *   x: number, y: number,
+   *   vx: number, vy: number,
+   *   rot: number, spin: number,
+   *   born: number, lifeMs: number,
+   *   baseW: number, baseH: number,
+   *   gScale: number,
+   *   dragX: number,
+   *   shrinkEnd: number,
+   * }} DebrisP
+   */
+  /** @type {DebrisP[]} */
+  let debris = [];
+  /** 本轮 clear 已弹出的格（避免重复 spawn） */
+  /** @type {Set<string>} */
+  const debrisSpawned = new Set();
+  /** @type {number | null} */
+  let debrisClearStart = null;
+  let lastDebrisNow = 0;
 
   function disposeObject(m) {
     m.traverse?.((o) => {
@@ -251,7 +284,7 @@ export function createBoardView(scene) {
         });
       }
     }
-    const shrinkSpan = Math.max(0.12, Math.min(0.6, FEEL_CLEAR_SHRINK));
+    const shrinkSpan = Math.max(0.16, Math.min(0.7, FEEL_CLEAR_SHRINK));
     // 消行旋转峰值（弧度，约 ±42°），方向与扫过一致
     const clearSpinMax = 0.74;
 
@@ -288,11 +321,11 @@ export function createBoardView(scene) {
             clearT <= delay
               ? 0
               : Math.min(1, (clearT - delay) / shrinkSpan);
-          // ease-in：前半稍留形，后半加速收完
-          const ease = localT * localT;
+          // ease-in：略加快收尾
+          const ease = localT ** 1.2;
           const shrink = Math.max(0.06, 1 - ease * 0.98);
           fill.scale.set(shrink, shrink, 1);
-          // spin: +1 / -1，与行/列扫过方向一致
+          // spin: +1 / -1，与行/列扫过方向一致（与缩放同 ease）
           fill.rotation.z = spin * ease * clearSpinMax;
         } else if (inPreclear) {
           // 将消预警：中心小幅旋转 + 轻微放大（仅填充）
@@ -499,6 +532,232 @@ export function createBoardView(scene) {
     }
   }
 
+  function clearAllDebris() {
+    for (const p of debris) {
+      debrisRoot.remove(p.mesh);
+      disposeObject(p.mesh);
+    }
+    debris = [];
+    debrisSpawned.clear();
+    debrisClearStart = null;
+  }
+
+  /**
+   * 消行碎裂：持久粒子 + 初速飞散 + 重力下落，寿命可长于 clearFx。
+   * 与单格 delay 同步弹出（扫到才碎）。
+   * @param {{ cells?: { row: number, col: number, color?: number, delay01?: number, spin?: number }[], start?: number } | null} clearFx
+   * @param {number} t01
+   * @param {ReturnType<import('./layout.js').computeLayout>} layout
+   * @param {number} nowMs
+   */
+  function tickClearDebris(clearFx, t01, layout, nowMs) {
+    const tune = getTune();
+    const nChip = Math.max(
+      0,
+      Math.min(8, Math.round(tune.FEEL_CLEAR_DEBRIS_COUNT ?? FEEL_CLEAR_DEBRIS_COUNT)),
+    );
+    const lifeMs = Math.max(
+      200,
+      tune.FEEL_CLEAR_DEBRIS_LIFE_MS ?? FEEL_CLEAR_DEBRIS_LIFE_MS,
+    );
+    const g = tune.FEEL_CLEAR_DEBRIS_GRAVITY ?? FEEL_CLEAR_DEBRIS_GRAVITY;
+    const speedK = tune.FEEL_CLEAR_DEBRIS_SPEED ?? FEEL_CLEAR_DEBRIS_SPEED;
+
+    // 新一轮消除：更新 start（spawn key 带 start，可与上轮粒子共存）
+    if (clearFx?.start != null && clearFx.start !== debrisClearStart) {
+      debrisClearStart = clearFx.start;
+    }
+
+    // 弹出
+    if (clearFx?.cells?.length && t01 >= 0 && layout && nChip > 0) {
+      const { cell, cellFill, frameW, frameH } = layout;
+      const size = Math.max(2, cellFill ?? cell * 0.96);
+      const shrinkSpan = Math.max(0.16, Math.min(0.7, FEEL_CLEAR_SHRINK));
+      const clearKey = clearFx.start ?? 0;
+
+      for (const c of clearFx.cells) {
+        const sk = `${clearKey}:${c.row},${c.col}`;
+        if (debrisSpawned.has(sk)) continue;
+        const delay = c.delay01 ?? 0;
+        const localT =
+          t01 <= delay ? 0 : Math.min(1, (t01 - delay) / shrinkSpan);
+        if (localT < 0.04) continue;
+        debrisSpawned.add(sk);
+
+        const rect = layout.cellRect(c.col, c.row);
+        const center = frameToThree(
+          rect.x + rect.w / 2,
+          rect.y + rect.h / 2,
+          frameW,
+          frameH,
+        );
+        const spinSign = c.spin ?? 1;
+        const colHex = c.color ?? 0xffffff;
+
+        // 发射器范围 ≈ 空格内容边长 size（在格内随机撒点）
+        const emitHalf = size * 0.48;
+
+        for (let i = 0; i < nChip; i++) {
+          // 多维随机：速度 / 大小 / 角度 / 寿命 / 重力感 各自独立
+          const rAng = Math.random();
+          const rSpd = Math.random();
+          const rSize = Math.random();
+          const rLife = Math.random();
+          const rSpin = Math.random();
+          const rG = Math.random();
+          const rUp = Math.random();
+          const rDrag = Math.random();
+          const rShrink = Math.random();
+
+          // 出生点：限制在空格大小范围内（均匀落在方格内）
+          const ox = (Math.random() * 2 - 1) * emitHalf;
+          const oy = (Math.random() * 2 - 1) * emitHalf;
+          const sx = center.x + ox;
+          const sy = center.y + oy;
+
+          // 角度：均分 + 大抖动，避免整齐放射
+          const ang =
+            (i / nChip) * Math.PI * 2 +
+            (rAng - 0.5) * 1.4 +
+            (Math.random() - 0.5) * 0.5;
+          // 初速系数：0.1～0.5
+          const speedMul = 0.1 + rSpd * 0.4;
+          const speed = size * speedK * speedMul;
+          const vx = Math.cos(ang) * speed * (0.7 + Math.random() * 0.6);
+          // 上抛量也随机（有的几乎不弹、有的高抛）
+          const upKick = size * (0.1 + rUp * 0.95) * speedMul;
+          const vy = Math.sin(ang) * speed * (0.35 + Math.random() * 0.7) + upKick;
+          // 方形边长：约 0.09～0.32 格边
+          const side = size * (0.09 + rSize * 0.23);
+
+          const mesh = new THREE.Mesh(
+            new THREE.PlaneGeometry(side, side),
+            new THREE.MeshBasicMaterial({
+              color: colHex,
+              transparent: true,
+              opacity: 1,
+              depthWrite: false,
+            }),
+          );
+          mesh.position.set(sx, sy, 0.42);
+          mesh.rotation.z = ang + (Math.random() - 0.5) * 0.8;
+          debrisRoot.add(mesh);
+          debris.push({
+            mesh,
+            x: sx,
+            y: sy,
+            vx,
+            vy,
+            rot: mesh.rotation.z,
+            spin:
+              (1.2 + rSpin * 7.5) *
+              spinSign *
+              (rSpin > 0.5 ? 1 : -1) *
+              (0.6 + Math.random() * 0.8),
+            born: nowMs,
+            // 寿命 0.55x～1.45x
+            lifeMs: lifeMs * (0.55 + rLife * 0.9),
+            baseW: side,
+            baseH: side,
+            // 重力感 0.55x～1.55x
+            gScale: 0.55 + rG * 1.0,
+            dragX: 0.15 + rDrag * 0.55,
+            // 结束时缩到 0.05～0.22
+            shrinkEnd: 0.05 + rShrink * 0.17,
+          });
+        }
+      }
+    }
+
+    // 物理积分 + 绘制
+    const dt =
+      lastDebrisNow > 0
+        ? Math.min(0.05, Math.max(0.001, (nowMs - lastDebrisNow) / 1000))
+        : 1 / 60;
+    lastDebrisNow = nowMs;
+
+    for (let i = debris.length - 1; i >= 0; i--) {
+      const p = debris[i];
+      const age = nowMs - p.born;
+      if (age >= p.lifeMs) {
+        debrisRoot.remove(p.mesh);
+        disposeObject(p.mesh);
+        debris.splice(i, 1);
+        continue;
+      }
+      // 重力（每片 gScale 不同）
+      const gHere = g * (p.gScale ?? 1);
+      p.vy -= gHere * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.rot += p.spin * dt;
+      // 水平阻力随机；竖直阻力较小
+      const dx = p.dragX ?? 0.35;
+      p.vx *= 1 - dx * dt;
+      p.vy *= 1 - (0.04 + dx * 0.12) * dt;
+
+      const u = Math.min(1, age / p.lifeMs);
+      // 缩小终点因片而异，下落中逐渐缩小
+      const endS = p.shrinkEnd ?? 0.1;
+      const scale = Math.max(endS, 1 - u * (1 - endS));
+      const fade = u < 0.3 ? 1 : Math.max(0, 1 - (u - 0.3) / 0.7);
+      p.mesh.position.set(p.x, p.y, 0.42);
+      p.mesh.rotation.z = p.rot;
+      p.mesh.scale.set(scale, scale, 1);
+      const mat = /** @type {THREE.MeshBasicMaterial} */ (p.mesh.material);
+      if (mat) mat.opacity = fade;
+    }
+  }
+
+  function hasActiveDebris() {
+    return debris.length > 0;
+  }
+
+  /**
+   * 消行屏幕震动：时长与 clearFx 一致（FEEL_CLEAR_MS）；
+   * 峰值幅度 ∝ 消线条数；时间包络「开始大 → 结尾小」。
+   * @param {{ lines?: { count?: number }, duration?: number, start?: number } | null} clearFx
+   * @param {number} t01  0=开始 1=结束（与缩/转同一 t）
+   * @param {number} nowMs
+   */
+  function applyClearScreenShake(clearFx, t01, nowMs) {
+    if (!clearFx || t01 < 0 || t01 >= 1) {
+      root.position.x = 0;
+      root.position.y = 0;
+      return;
+    }
+    const tune = getTune();
+    const ampMin =
+      tune.FEEL_CLEAR_SHAKE_AMP_MIN ??
+      tune.FEEL_CLEAR_SHAKE_AMP_DEFAULT ??
+      tune.FEEL_CLEAR_SHAKE_AMP_1 ??
+      FEEL_CLEAR_SHAKE_AMP_MIN;
+    const step = tune.FEEL_CLEAR_SHAKE_AMP_STEP ?? FEEL_CLEAR_SHAKE_AMP_STEP;
+    const ampMax = tune.FEEL_CLEAR_SHAKE_AMP_MAX ?? FEEL_CLEAR_SHAKE_AMP_MAX;
+    const hz = tune.FEEL_CLEAR_SHAKE_HZ ?? FEEL_CLEAR_SHAKE_HZ;
+
+    const lineCount = Math.max(1, clearFx.lines?.count ?? 1);
+    // 峰值：1 条 ampMin，每多 1 条 +step
+    const peak = Math.min(ampMax, Math.max(0, ampMin + (lineCount - 1) * step));
+    if (peak <= 0.01) {
+      root.position.x = 0;
+      root.position.y = 0;
+      return;
+    }
+
+    // 与消除动画同进度：t=0 满幅，t=1 归零（ease-out 二次）
+    const envelope = (1 - t01) * (1 - t01);
+    // 相对 clear 起点计相位，整段时长 = clearFx.duration
+    const elapsedMs =
+      clearFx.start != null
+        ? Math.max(0, nowMs - clearFx.start)
+        : t01 * (clearFx.duration || 340);
+    const phase = (elapsedMs * 0.001) * hz * Math.PI * 2;
+    const a = peak * envelope;
+    root.position.x = Math.sin(phase) * a;
+    root.position.y = Math.cos(phase * 1.19 + 0.8) * a * 0.88;
+  }
+
   /**
    * @param {object} state
    * @param {object} [state.clearFx]
@@ -508,7 +767,11 @@ export function createBoardView(scene) {
     clearList(dynamicMeshes, dynamicRoot);
     const { layout, cells, tray, drag, hover, clearFx = null, nowMs = performance.now() } =
       state;
-    if (!layout || layout.cell < 2) return;
+    if (!layout || layout.cell < 2) {
+      // 仍推进粒子物理（消行结束后粒子可能还在）
+      tickClearDebris(null, -1, layout, nowMs);
+      return;
+    }
 
     const { cell, boardCellInset, frameW, frameH } = layout;
     const trayCell = layout.tray.cell;
@@ -544,6 +807,9 @@ export function createBoardView(scene) {
         ? Math.min(1, Math.max(0, (nowMs - clearFx.start) / clearFx.duration))
         : -1;
 
+    // 消行屏幕震动：少消小、多消大，随动画衰减
+    applyClearScreenShake(clearFx, clearT01, nowMs);
+
     // 仅 count>0 时传 preclear；paintBoard 只对「已落子且在将消行列」转预警
     paintBoard(
       cells,
@@ -556,6 +822,14 @@ export function createBoardView(scene) {
             sweep: clearFx.sweep,
           }
         : null,
+    );
+
+    // 碎裂粒子：弹出 + 重力（可活过 clearFx）
+    tickClearDebris(
+      clearFx && clearT01 >= 0 ? clearFx : null,
+      clearT01,
+      layout,
+      nowMs,
     );
 
     // 投影：统一本色；仅将消格加旋转
@@ -630,12 +904,21 @@ export function createBoardView(scene) {
   }
 
   function dispose() {
+    root.position.set(0, 0, 0);
     clearList(dynamicMeshes, dynamicRoot);
+    clearAllDebris();
     clearBoardFills();
     clearList(staticMeshes, staticRoot);
     boardCells.clear();
     scene.remove(root);
   }
 
-  return { root, rebuild, render, dispose };
+  return {
+    root,
+    rebuild,
+    render,
+    dispose,
+    hasActiveDebris,
+    clearAllDebris,
+  };
 }

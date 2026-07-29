@@ -1,8 +1,9 @@
-# three-webgpu-cap-shell
+# Block Blast（three-webgpu-cap-shell）
 
-**可复用基础外壳**：Three.js + **WebGPU** + Vite + **Capacitor iOS** + 自研 **NativeHaptics**。
+**Block Blast! Classic 手感向复刻**：Three.js + **WebGPU** + Vite + **Capacitor iOS** + 自研 **NativeHaptics**。  
+在可复用壳之上实现 8×8 盘、tray、拖放投影、消行反馈、阶段发块与真机调参。
 
-桌面预览使用 **手机比例框（393×852）**，UI 预留 **灵动岛 / Home 条** 安全区；真机 App 全屏 + 系统 Safe Area。
+桌面预览使用 **手机比例框（393×852）**；真机 App 全屏 + 系统 Safe Area。
 
 ---
 
@@ -10,23 +11,24 @@
 
 | 文档 | 给谁 | 内容 |
 |------|------|------|
-| **[AGENTS.md](./AGENTS.md)** | AI / 任意新编辑窗口 | 一页纸：入口地图、硬性约定 |
-| **[docs/ENTRYPOINTS.md](./docs/ENTRYPOINTS.md)** | 查「从哪启动」 | 命令 / DOM / Web 调用链 / iOS 链 |
-| **[docs/ENGINEERING.md](./docs/ENGINEERING.md)** | 维护者 | 设计决策、配置表、震动、踩坑 |
-| **[plugins/native-haptics/README.md](./plugins/native-haptics/README.md)** | 只接震动 | JS API + 注入方式 |
-| **本 README** | 人类上手 | 安装、dev、真机三步 |
+| **[AGENTS.md](./AGENTS.md)** | AI / 新窗口 | 一页纸：入口、约定 |
+| **[docs/README.md](./docs/README.md)** | 所有人 | **文档索引与规范** |
+| **[docs/FEEL-DESIGN.md](./docs/FEEL-DESIGN.md)** | 改手感/消行/震动 | 问题→规则、预设 |
+| **[docs/PROJECT-HISTORY.md](./docs/PROJECT-HISTORY.md)** | 查踩坑 | 里程碑与问题全表 |
+| **[docs/DEAL-DESIGN.md](./docs/DEAL-DESIGN.md)** | 改发块 | 阶段难度 |
+| **[docs/ENTRYPOINTS.md](./docs/ENTRYPOINTS.md)** | 查启动链 | 命令 / DOM / iOS |
+| **[docs/ENGINEERING.md](./docs/ENGINEERING.md)** | 维护底座 | Capacitor / WebGPU |
+| **本 README** | 人类上手 | 安装、dev、真机 |
 
-> 新会话 / 新同事：**先读 AGENTS.md**，再按需下钻 ENGINEERING。
+> 新会话：**AGENTS.md → docs/README.md**，再按任务下钻。
 
 ---
 
 ## 本机路径
 
 ```text
-/Users/wangzhixuan/Documents/Threejs_Work/Project_基础/three-webgpu-cap-shell
+/Users/wangzhixuan/Documents/Threejs_Work/BlockBlast/three-webgpu-cap-shell
 ```
-
-父目录 `Project_基础` 用于「基础脚手架」；**真正工程根是本文件夹**。
 
 ---
 
@@ -39,7 +41,7 @@ npm run dev
 # → http://127.0.0.1:5190/
 ```
 
-应看到：居中竖屏手机框、紫色立方体、顶部状态（含 safe 数值）、底部震动测试按钮。
+应看到：竖屏框内的 Block Blast 盘面、分数 HUD、左下角 **手感1/2**、右下角 **调参**。
 
 ---
 
@@ -47,10 +49,10 @@ npm run dev
 
 ```text
 index.html
-  └─ src/main.js                 ← 业务/demo 从这里改
-       ├─ src/viewport.js        ← 手机框 + native + safe
-       ├─ src/create-renderer.js ← WebGPU
-       └─ src/native-haptics.js  ← 震动 JS
+  └─ src/main.js
+       ├─ createGame()           ← src/game/game.js
+       ├─ createFeelPanel()      ← 调参 + 手感预设
+       ├─ viewport / renderer / haptics
 ```
 
 DOM 约定（勿拆）：
@@ -60,7 +62,7 @@ DOM 约定（勿拆）：
 ```
 
 - `#stage`：3D canvas  
-- `#hud`：所有 UI（自动避开灵动岛区域）
+- `#hud`：分数与安全区 UI
 
 ---
 

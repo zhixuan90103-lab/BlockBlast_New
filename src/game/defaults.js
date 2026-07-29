@@ -140,26 +140,53 @@ export const FEEL_DRAG_FOLLOW_GAIN_MAX = FEEL_POINTER_GAIN_MAX;
  */
 export const FEEL_BOARD_ENGAGE_OVERLAP = 0;
 
-/** 投影换格瞬态震动（普通挪格，无消） */
-export const FEEL_HAPTIC_GHOST_INTENSITY = 0.55;
-export const FEEL_HAPTIC_GHOST_SHARPNESS = 0.18;
-/** 投影到「将消」格：与普通挪格区分（手感面板标定） */
-export const FEEL_HAPTIC_CLEAR_PREVIEW_INTENSITY = 0.65;
-export const FEEL_HAPTIC_CLEAR_PREVIEW_SHARPNESS = 0.25;
+/** 投影换格瞬态震动（普通挪格，无消）— 真机面板标定 */
+export const FEEL_HAPTIC_GHOST_INTENSITY = 0.5;
+export const FEEL_HAPTIC_GHOST_SHARPNESS = 0.3;
+/** 投影到「将消」格 — 真机面板标定 */
+export const FEEL_HAPTIC_CLEAR_PREVIEW_INTENSITY = 0.7;
+export const FEEL_HAPTIC_CLEAR_PREVIEW_SHARPNESS = 0.3;
 /**
- * 消除手感 = 1 瞬态 + 间隔 + 1 段连续震
- * 连续震在时长内从「起」线性插值到「末」；起/末强度皆 ≈0 或时长 0 则不做连续。
+ * 消除手感 = T→C→T→C→T→C（3 波）；手感1/2 出厂共用。
  */
-export const FEEL_HAPTIC_CLEAR_FX_TRANSIENT_INTENSITY = 0.9;
-export const FEEL_HAPTIC_CLEAR_FX_TRANSIENT_SHARPNESS = 0.35;
-/** 瞬态结束后到连续震开始的间隔（ms） */
-export const FEEL_HAPTIC_CLEAR_FX_GAP_MS = 80;
-/** 连续震时长（ms） */
-export const FEEL_HAPTIC_CLEAR_FX_DURATION_MS = 100;
-export const FEEL_HAPTIC_CLEAR_FX_START_INTENSITY = 0.5;
-export const FEEL_HAPTIC_CLEAR_FX_START_SHARPNESS = 0;
-export const FEEL_HAPTIC_CLEAR_FX_END_INTENSITY = 0.1;
-export const FEEL_HAPTIC_CLEAR_FX_END_SHARPNESS = 0;
+/** 段间间隔（ms）：T↔C、C↔T 共用 */
+export const FEEL_HAPTIC_CLEAR_FX_GAP_MS = 30;
+
+// —— 波1 ——
+export const FEEL_HAPTIC_CLEAR_FX_T1_INTENSITY = 1.0;
+export const FEEL_HAPTIC_CLEAR_FX_T1_SHARPNESS = 0.45;
+export const FEEL_HAPTIC_CLEAR_FX_C1_DURATION_MS = 50;
+export const FEEL_HAPTIC_CLEAR_FX_C1_START_INTENSITY = 0.4;
+export const FEEL_HAPTIC_CLEAR_FX_C1_START_SHARPNESS = 0.1;
+export const FEEL_HAPTIC_CLEAR_FX_C1_END_INTENSITY = 0.2;
+export const FEEL_HAPTIC_CLEAR_FX_C1_END_SHARPNESS = 0.0;
+/** @deprecated 兼容旧名 → 波1 */
+export const FEEL_HAPTIC_CLEAR_FX_TRANSIENT_INTENSITY = FEEL_HAPTIC_CLEAR_FX_T1_INTENSITY;
+export const FEEL_HAPTIC_CLEAR_FX_TRANSIENT_SHARPNESS = FEEL_HAPTIC_CLEAR_FX_T1_SHARPNESS;
+export const FEEL_HAPTIC_CLEAR_FX_DURATION_MS = FEEL_HAPTIC_CLEAR_FX_C1_DURATION_MS;
+export const FEEL_HAPTIC_CLEAR_FX_START_INTENSITY = FEEL_HAPTIC_CLEAR_FX_C1_START_INTENSITY;
+export const FEEL_HAPTIC_CLEAR_FX_START_SHARPNESS = FEEL_HAPTIC_CLEAR_FX_C1_START_SHARPNESS;
+export const FEEL_HAPTIC_CLEAR_FX_END_INTENSITY = FEEL_HAPTIC_CLEAR_FX_C1_END_INTENSITY;
+export const FEEL_HAPTIC_CLEAR_FX_END_SHARPNESS = FEEL_HAPTIC_CLEAR_FX_C1_END_SHARPNESS;
+
+// —— 波2 ——
+export const FEEL_HAPTIC_CLEAR_FX_T2_INTENSITY = 0.75;
+export const FEEL_HAPTIC_CLEAR_FX_T2_SHARPNESS = 0.45;
+export const FEEL_HAPTIC_CLEAR_FX_C2_DURATION_MS = 45;
+export const FEEL_HAPTIC_CLEAR_FX_C2_START_INTENSITY = 0.32;
+export const FEEL_HAPTIC_CLEAR_FX_C2_START_SHARPNESS = 0.08;
+export const FEEL_HAPTIC_CLEAR_FX_C2_END_INTENSITY = 0.15;
+export const FEEL_HAPTIC_CLEAR_FX_C2_END_SHARPNESS = 0.0;
+
+// —— 波3 ——
+export const FEEL_HAPTIC_CLEAR_FX_T3_INTENSITY = 0.55;
+export const FEEL_HAPTIC_CLEAR_FX_T3_SHARPNESS = 0.4;
+export const FEEL_HAPTIC_CLEAR_FX_C3_DURATION_MS = 40;
+export const FEEL_HAPTIC_CLEAR_FX_C3_START_INTENSITY = 0.25;
+export const FEEL_HAPTIC_CLEAR_FX_C3_START_SHARPNESS = 0.06;
+export const FEEL_HAPTIC_CLEAR_FX_C3_END_INTENSITY = 0.1;
+export const FEEL_HAPTIC_CLEAR_FX_C3_END_SHARPNESS = 0.0;
+
 /** 同一/连发去重冷却（ms） */
 export const FEEL_HAPTIC_GHOST_COOLDOWN_MS = 108;
 /**
@@ -217,11 +244,32 @@ export const FEEL_SNAP_ONLY_VALID = true;
 export const FEEL_COMMIT_MS = 90;
 export const FEEL_REJECT_MS = 180;
 /** 落子消行动画时长（ms）：自落子处向外依次收缩 → 清格 */
-export const FEEL_CLEAR_MS = 220;
+export const FEEL_CLEAR_MS = 280;
 /** 消行错峰：时间轴前段用于按距离排序启动（0–1） */
 export const FEEL_CLEAR_STAGGER = 0.42;
-/** 单格收缩占用时间轴比例（越小缩得越快） */
-export const FEEL_CLEAR_SHRINK = 0.32;
+/** 单格收缩占用时间轴比例（越大单格缩/转越慢） */
+export const FEEL_CLEAR_SHRINK = 0.4;
+/** 每格碎裂粒子数（0 关） */
+export const FEEL_CLEAR_DEBRIS_COUNT = 2;
+/** 粒子存活时长（ms，从弹出起算，可长于消行动画） */
+export const FEEL_CLEAR_DEBRIS_LIFE_MS = 720;
+/** 重力加速度（世界单位/s²，Y 向上为正时向下为负） */
+export const FEEL_CLEAR_DEBRIS_GRAVITY = 2200;
+/** 弹出初速系数（× 格边长） */
+export const FEEL_CLEAR_DEBRIS_SPEED = 2.8;
+/**
+ * 消行屏幕震动（boardView 位移，单位≈像素）。
+ * 时长与 FEEL_CLEAR_MS 同步；包络开始大、结尾小。
+ * **峰值最小 = AMP_MIN**（单消）；每多 1 条 +STEP，封顶 MAX。
+ */
+export const FEEL_CLEAR_SHAKE_AMP_MIN = 2.4;
+/** @deprecated 兼容旧名 */
+export const FEEL_CLEAR_SHAKE_AMP_DEFAULT = FEEL_CLEAR_SHAKE_AMP_MIN;
+export const FEEL_CLEAR_SHAKE_AMP_1 = FEEL_CLEAR_SHAKE_AMP_MIN;
+export const FEEL_CLEAR_SHAKE_AMP_STEP = 2.8;
+export const FEEL_CLEAR_SHAKE_AMP_MAX = 16;
+/** 震动振荡频率（Hz） */
+export const FEEL_CLEAR_SHAKE_HZ = 38;
 export const FEEL_INPUT_LOCK_MS = 150;
 export const FEEL_HIT_SLOP = 0.2;
 export const FEEL_PICKUP_SCALE_MS = 100;

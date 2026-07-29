@@ -27,14 +27,18 @@ index.html
         ├─ applyNativeClass() / applyShellLayout()     ← viewport.js
         ├─ createRenderer({ container: #stage })       ← create-renderer.js
         │     └─ three/webgpu WebGPURenderer
-        ├─ resize: bindShellResize → resizeToFrame()
         ├─ createNativeHaptics()                       ← native-haptics.js
-        │     └─ Capacitor registerPlugin('NativeHaptics')
-        └─ demo scene (Box + OrbitControls) + HUD 按钮
+        ├─ createGame({ stage, hud, renderer, haptics })  ← game/game.js
+        │     ├─ grid / deal / score / view
+        │     ├─ feel/drag-session · ghost-policy · haptics-ghost
+        │     └─ clearFx 消行编排
+        ├─ createFeelPanel({ onChange → game.applyTune })
+        │     └─ 手感1/2 ← feel-presets.js（默认手感1）
+        └─ bindShellResize / scheduleStableLayout
 ```
 
-**替换玩法：** 主要改 `src/main.js`（或拆 `src/game/*` 再由 main 引入）。  
-**不要删：** `create-renderer.js` / `viewport.js` / `native-haptics.js` 契约。
+**改玩法：** `src/game/*`。  
+**保留：** `create-renderer.js` / `viewport.js` / `native-haptics.js` 契约。
 
 ---
 
@@ -44,15 +48,16 @@ index.html
 #letterbox
   #phone-frame          ← getFrameSize() 量这里
     #stage              ← canvas 父节点
-    #hud                ← 安全区 UI
-      header / .panel / [data-haptic]
+    #hud                ← 分数 / game over 等安全区 UI
+    #feel-panel         ← 左下手感预设 + 右下调参（动态挂载）
 ```
 
 | ID | 谁写入 | 谁读取 |
 |----|--------|--------|
 | `#stage` | `createRenderer` append canvas | 无 |
-| `#phone-frame` | CSS / `applyShellLayout` | `getFrameSize` |
-| `#hud` | 静态 HTML + 业务 UI | CSS safe padding |
+| `#phone-frame` | CSS / `applyShellLayout` | `getFrameSize` · feel-panel mount |
+| `#hud` | game HUD | CSS safe padding |
+| `#feel-panel` | `createFeelPanel` | 指针 stopPropagation |
 | `body.native-app` | `applyNativeClass` | CSS 真机规则 |
 
 ---
