@@ -24,15 +24,19 @@
             <p id="status" class="status status-debug" hidden></p>
             <p class="phase" data-game-phase hidden>M2</p>
           </header>
+        </div>
 
-          <div class="game-over" data-game-over hidden aria-hidden="true">
-            <div class="game-over-card">
+        <!-- 全屏结算：盖住 stage + hud -->
+        <div class="game-over" data-game-over hidden aria-hidden="true">
+          <div class="game-over-inner">
+            <div class="game-over-copy">
               <p class="game-over-title">Game Over</p>
+              <p class="game-over-score-label">Score</p>
               <p class="game-over-score">
-                Score <span data-final-score>0</span>
+                <span data-final-score>0</span>
               </p>
-              <button type="button" class="restart-btn" data-restart>Play Again</button>
             </div>
+            <button type="button" class="restart-btn" data-restart>Play Again</button>
           </div>
         </div>
       </div>

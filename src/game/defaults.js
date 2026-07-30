@@ -352,6 +352,10 @@ export const FEEL_INPUT_LOCK_MS = 150;
 export const FEEL_HIT_SLOP = 0.2;
 export const FEEL_PICKUP_SCALE_MS = 100;
 export const FEEL_REFILL_STAGGER_MS = 40;
+/** 死亡演出：每一横排填满/揭开时长（ms，含淡入淡出） */
+export const FEEL_DEATH_ROW_MS = 72;
+/** 填满后 → 揭开前的停留（ms） */
+export const FEEL_DEATH_PAUSE_MS = 420;
 
 // —— 布局 / 格子几何（对齐正版重点）——
 /**

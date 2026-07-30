@@ -258,6 +258,22 @@ export function createBoardView(scene) {
   }
 
   /**
+   * 填充块整体透明度（死亡演出淡入淡出）
+   * @param {THREE.Object3D} group
+   * @param {number} opacity01
+   */
+  function setFillGroupOpacity(group, opacity01) {
+    const op = Math.min(1, Math.max(0, opacity01));
+    group.traverse((o) => {
+      if (!o.isMesh || !o.material || Array.isArray(o.material)) return;
+      const base = o.material.userData?.baseOpacity ?? 1;
+      o.material.transparent = true;
+      o.material.opacity = base * op;
+      o.material.depthWrite = op > 0.95 && base > 0.95;
+    });
+  }
+
+  /**
    * @param {(number|null)[][]} cells
    * @param {{ rows: number[], cols: number[] } | null} preclear
    * @param {number} [nowMs] 用于将消旋转预警
@@ -266,8 +282,9 @@ export function createBoardView(scene) {
    *   t01?: number,
    *   sweep?: { fromLeft?: boolean, fromTop?: boolean },
    * } | null} [clearFx]
+   * @param {number[][] | null} [cellOpacity] 每格 0..1，死亡淡入淡出
    */
-  function paintBoard(cells, preclear, nowMs = 0, clearFx = null) {
+  function paintBoard(cells, preclear, nowMs = 0, clearFx = null, cellOpacity = null) {
     const pcSet = preclearKeySet(preclear);
     // 小幅度绕自身中心 Z 轴摆动（弧度）
     // 小幅、更快：角频率 0.038，幅度约 ±0.055 rad
@@ -303,12 +320,19 @@ export function createBoardView(scene) {
           continue;
         }
 
+        const cellOp = cellOpacity?.[row]?.[col] ?? 1;
         const fill = ensureBoardFill(key, slot, v, 1);
         // 恢复 transform；禁止整块改色（会抹掉 bevel/高光）
         fill.scale.set(1, 1, 1);
         fill.rotation.z = 0;
         fill.position.set(slot.position.x, slot.position.y, 0.02);
         fill.visible = true;
+        setFillGroupOpacity(fill, cellOp);
+        // 淡入时略放大→落定
+        if (cellOp < 0.999 && cellOp > 0.02) {
+          const s = 0.88 + 0.12 * cellOp;
+          fill.scale.set(s, s, 1);
+        }
 
         // 仅「已落子且属于将满行/列」才预警（空槽、无关块不预警）
         const inPreclear = pcSet.has(key);
@@ -774,8 +798,16 @@ export function createBoardView(scene) {
    */
   function render(state) {
     clearList(dynamicMeshes, dynamicRoot);
-    const { layout, cells, tray, drag, hover, clearFx = null, nowMs = performance.now() } =
-      state;
+    const {
+      layout,
+      cells,
+      tray,
+      drag,
+      hover,
+      clearFx = null,
+      cellOpacity = null,
+      nowMs = performance.now(),
+    } = state;
     if (!layout || layout.cell < 2) {
       // 仍推进粒子物理（消行结束后粒子可能还在）
       tickClearDebris(null, -1, layout, nowMs);
@@ -831,6 +863,7 @@ export function createBoardView(scene) {
             sweep: clearFx.sweep,
           }
         : null,
+      cellOpacity,
     );
 
     // 碎裂粒子：弹出 + 重力（可活过 clearFx）

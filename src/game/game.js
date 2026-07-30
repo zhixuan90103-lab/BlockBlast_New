@@ -16,10 +16,13 @@ import {
   FEEL_CLEAR_MS,
   FEEL_CLEAR_STAGGER,
   FEEL_COMMIT_MS,
+  FEEL_DEATH_PAUSE_MS,
+  FEEL_DEATH_ROW_MS,
   FEEL_HIT_SLOP,
   FEEL_INPUT_LOCK_MS,
   FEEL_REJECT_MS,
   GRID,
+  PIECE_PALETTE,
   SHOW_DEBUG_STATUS,
 } from './defaults.js';
 import {
@@ -97,6 +100,21 @@ export function createGame(opts) {
    */
   let clearFx = null;
 
+  /**
+   * 死亡演出：自下而上填满 → 停顿 → 自上而下露出死亡盘面 → 结算
+   * @type {null | {
+   *   phase: 'fill' | 'pause' | 'reveal',
+   *   start: number,
+   *   rowMs: number,
+   *   pauseMs: number,
+   *   snapshot: (number|null)[][],
+   *   fillers: (number|null)[][],
+   *   displayCells: (number|null)[][],
+   *   displayOpacity: number[][],
+   * }}
+   */
+  let deathFx = null;
+
   let inputLockedUntil = 0;
   let gameOver = false;
   let layout = computeLayout(frame0, readSafeAreaInsets());
@@ -113,9 +131,11 @@ export function createGame(opts) {
   const bestEl = hud.querySelector('[data-best-score]');
   const phaseEl = hud.querySelector('[data-game-phase]');
   const statusEl = hud.querySelector('#status');
-  const overlayEl = hud.querySelector('[data-game-over]');
-  const finalScoreEl = hud.querySelector('[data-final-score]');
-  const restartBtn = hud.querySelector('[data-restart]');
+  // 结算全屏层在 phone-frame 下，不在 #hud 内
+  const overlayRoot = frameEl || hud;
+  const overlayEl = overlayRoot.querySelector('[data-game-over]');
+  const finalScoreEl = overlayRoot.querySelector('[data-final-score]');
+  const restartBtn = overlayRoot.querySelector('[data-restart]');
 
   let bestScore = 0;
   try {
@@ -139,6 +159,11 @@ export function createGame(opts) {
     if (overlayEl) {
       overlayEl.hidden = !on;
       overlayEl.setAttribute('aria-hidden', on ? 'false' : 'true');
+      if (on) {
+        overlayEl.classList.add('is-visible');
+      } else {
+        overlayEl.classList.remove('is-visible');
+      }
     }
     if (on) {
       if (finalScoreEl) finalScoreEl.textContent = String(scoreState.score);
@@ -154,10 +179,206 @@ export function createGame(opts) {
     }
   }
 
+  /** @returns {(number|null)[][]} */
+  function cloneBoard(src) {
+    return src.map((row) => row.slice());
+  }
+
+  /** 为空槽预生成填充色（死亡波用） */
+  function buildDeathFillers(snapshot) {
+    /** @type {(number|null)[][]} */
+    const fillers = [];
+    for (let r = 0; r < GRID; r++) {
+      fillers[r] = [];
+      for (let c = 0; c < GRID; c++) {
+        if (snapshot[r][c] != null) {
+          fillers[r][c] = null;
+        } else {
+          const idx = Math.floor(Math.random() * PIECE_PALETTE.length);
+          fillers[r][c] = PIECE_PALETTE[idx] ?? 0x4da3ff;
+        }
+      }
+    }
+    return fillers;
+  }
+
+  function easeSmooth(t) {
+    const x = Math.min(1, Math.max(0, t));
+    return x * x * (3 - 2 * x);
+  }
+
+  /**
+   * @param {'fill' | 'reveal' | 'pause'} phase
+   * @param {number} progress 连续进度 0..GRID（整数部分=已完成排，小数=当前排淡入/淡出）
+   * @param {(number|null)[][]} snapshot
+   * @param {(number|null)[][]} fillers
+   * @returns {{ cells: (number|null)[][], opacity: number[][] }}
+   */
+  function buildDeathDisplay(phase, progress, snapshot, fillers) {
+    const p = Math.max(0, Math.min(GRID, progress));
+    const done = Math.floor(p);
+    const frac = easeSmooth(p - done);
+
+    /** @type {(number|null)[][]} */
+    const cells = [];
+    /** @type {number[][]} */
+    const opacity = [];
+
+    for (let r = 0; r < GRID; r++) {
+      cells[r] = [];
+      opacity[r] = [];
+      for (let c = 0; c < GRID; c++) {
+        const snap = snapshot[r][c];
+        if (phase === 'fill') {
+          // 自下而上：底部 done 行满；第 done 行正在淡入
+          const d = GRID - 1 - r; // 0=底排
+          if (snap != null) {
+            cells[r][c] = snap;
+            opacity[r][c] = 1;
+          } else if (d < done) {
+            cells[r][c] = fillers[r][c];
+            opacity[r][c] = 1;
+          } else if (d === done && done < GRID && frac > 0.001) {
+            cells[r][c] = fillers[r][c];
+            opacity[r][c] = frac;
+          } else {
+            cells[r][c] = null;
+            opacity[r][c] = 1;
+          }
+        } else if (phase === 'pause') {
+          if (snap != null) {
+            cells[r][c] = snap;
+            opacity[r][c] = 1;
+          } else {
+            cells[r][c] = fillers[r][c];
+            opacity[r][c] = 1;
+          }
+        } else {
+          // 自上而下揭开：顶部 done 行已是死亡盘；第 done 行 filler 淡出
+          if (snap != null) {
+            cells[r][c] = snap;
+            opacity[r][c] = 1;
+          } else if (r < done) {
+            cells[r][c] = null;
+            opacity[r][c] = 1;
+          } else if (r === done && done < GRID) {
+            // 淡出 filler
+            const op = 1 - frac;
+            if (op < 0.02) {
+              cells[r][c] = null;
+              opacity[r][c] = 1;
+            } else {
+              cells[r][c] = fillers[r][c];
+              opacity[r][c] = op;
+            }
+          } else {
+            cells[r][c] = fillers[r][c];
+            opacity[r][c] = 1;
+          }
+        }
+      }
+    }
+    return { cells, opacity };
+  }
+
+  function startDeathFx() {
+    if (deathFx || gameOver) return;
+    drag = null;
+    hover = null;
+    const snapshot = cloneBoard(grid.cells);
+    const fillers = buildDeathFillers(snapshot);
+    const rowMs = FEEL_DEATH_ROW_MS;
+    const pauseMs = FEEL_DEATH_PAUSE_MS;
+    const disp = buildDeathDisplay('fill', 0, snapshot, fillers);
+    deathFx = {
+      phase: 'fill',
+      start: performance.now(),
+      rowMs,
+      pauseMs,
+      snapshot,
+      fillers,
+      displayCells: disp.cells,
+      displayOpacity: disp.opacity,
+    };
+    // 结算数据先写好，动画结束后再亮 overlay
+    if (finalScoreEl) finalScoreEl.textContent = String(scoreState.score);
+    if (scoreState.score > bestScore) {
+      bestScore = scoreState.score;
+      try {
+        localStorage.setItem('bb_best', String(bestScore));
+      } catch {
+        /* ignore */
+      }
+    }
+    syncHud();
+    paint();
+  }
+
+  function finishDeathFx() {
+    deathFx = null;
+    setGameOver(true);
+    paint();
+  }
+
+  function tickDeathFx() {
+    if (!deathFx) return;
+    const now = performance.now();
+    const { phase, start, rowMs, pauseMs, snapshot, fillers } = deathFx;
+    const fillDur = GRID * rowMs;
+
+    if (phase === 'fill') {
+      const elapsed = now - start;
+      // 连续进度 0..GRID（含排内淡入）
+      const progress = Math.min(GRID, elapsed / rowMs);
+      const disp = buildDeathDisplay('fill', progress, snapshot, fillers);
+      deathFx.displayCells = disp.cells;
+      deathFx.displayOpacity = disp.opacity;
+      if (elapsed >= fillDur) {
+        const full = buildDeathDisplay('pause', GRID, snapshot, fillers);
+        deathFx.displayCells = full.cells;
+        deathFx.displayOpacity = full.opacity;
+        deathFx.phase = 'pause';
+        deathFx.start = now;
+      }
+      paint();
+      return;
+    }
+
+    if (phase === 'pause') {
+      const full = buildDeathDisplay('pause', GRID, snapshot, fillers);
+      deathFx.displayCells = full.cells;
+      deathFx.displayOpacity = full.opacity;
+      if (now - start >= pauseMs) {
+        deathFx.phase = 'reveal';
+        deathFx.start = now;
+      }
+      paint();
+      return;
+    }
+
+    // reveal：自上而下淡出填充，露出死亡盘
+    {
+      const elapsed = now - start;
+      const progress = Math.min(GRID, elapsed / rowMs);
+      const disp = buildDeathDisplay('reveal', progress, snapshot, fillers);
+      deathFx.displayCells = disp.cells;
+      deathFx.displayOpacity = disp.opacity;
+      if (elapsed >= fillDur) {
+        const final = buildDeathDisplay('reveal', GRID, snapshot, fillers);
+        deathFx.displayCells = final.cells;
+        deathFx.displayOpacity = final.opacity;
+        paint();
+        finishDeathFx();
+        return;
+      }
+      paint();
+    }
+  }
+
   function checkGameOver() {
-    if (trayEmpty()) return;
+    if (trayEmpty() || deathFx || gameOver) return;
     if (!anyTrayPieceFits(grid, tray)) {
-      setGameOver(true);
+      startDeathFx();
     }
   }
 
@@ -165,6 +386,7 @@ export function createGame(opts) {
     drag = null;
     hover = null;
     clearFx = null;
+    deathFx = null;
     ghostHaptics.onClearFxEnd?.();
     boardView.clearAllDebris?.();
     grid.reset();
@@ -199,19 +421,21 @@ export function createGame(opts) {
   function paint() {
     boardView.render({
       layout,
-      cells: grid.cells,
-      tray,
-      drag: drag
-        ? {
-            piece: drag.piece,
-            frameX: drag.frameX,
-            frameY: drag.frameY,
-            scale: drag.scale,
-            trayIndex: drag.trayIndex,
-          }
-        : null,
-      hover,
-      clearFx,
+      cells: deathFx?.displayCells ?? grid.cells,
+      cellOpacity: deathFx?.displayOpacity ?? null,
+      tray: deathFx ? [null, null, null] : tray,
+      drag:
+        deathFx || !drag
+          ? null
+          : {
+              piece: drag.piece,
+              frameX: drag.frameX,
+              frameY: drag.frameY,
+              scale: drag.scale,
+              trayIndex: drag.trayIndex,
+            },
+      hover: deathFx ? null : hover,
+      clearFx: deathFx ? null : clearFx,
       nowMs: performance.now(),
     });
     syncHud();
@@ -423,11 +647,15 @@ export function createGame(opts) {
   }
 
   function isLocked() {
-    return performance.now() < inputLockedUntil || clearFx != null;
+    return (
+      performance.now() < inputLockedUntil ||
+      clearFx != null ||
+      deathFx != null
+    );
   }
 
   function onPointerDown(e) {
-    if (gameOver || isLocked() || drag) return;
+    if (gameOver || deathFx || isLocked() || drag) return;
     if (e.button != null && e.button !== 0) return;
 
     const { x: fx, y: fy } = framePointFromClient(e.clientX, e.clientY);
@@ -621,7 +849,8 @@ export function createGame(opts) {
   let running = true;
   renderer.setAnimationLoop(() => {
     if (!running) return;
-    if (drag) tickDragFrame();
+    if (deathFx) tickDeathFx();
+    else if (drag) tickDragFrame();
     else if (clearFx) tickClearFx();
     // 碎裂粒子可活过 clearFx，需继续 paint 做重力
     else if (boardView.hasActiveDebris?.()) paint();

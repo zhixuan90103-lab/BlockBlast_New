@@ -238,66 +238,131 @@ header {
   color: rgba(255, 255, 255, 0.65);
 }
 
-/* Game over overlay */
+/* Game over — 全屏结算（盖住整个 phone-frame） */
 .game-over {
   position: absolute;
   inset: 0;
-  z-index: 20;
+  z-index: 50;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   pointer-events: auto;
-  background: rgba(2, 6, 23, 0.62);
-  backdrop-filter: blur(6px);
+  /* 半透明紫底，透出下方盘面 */
+  background: linear-gradient(
+    180deg,
+    rgba(91, 79, 212, 0.78) 0%,
+    rgba(74, 59, 181, 0.82) 42%,
+    rgba(42, 36, 96, 0.88) 100%
+  );
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  padding-top: calc(var(--safe-top) + var(--ui-pad-top) + 20px);
+  padding-right: calc(var(--safe-right) + var(--ui-pad-x));
+  padding-bottom: calc(var(--safe-bottom) + var(--ui-pad-bottom) + 20px);
+  padding-left: calc(var(--safe-left) + var(--ui-pad-x));
+}
+
+.game-over.is-visible {
+  opacity: 1;
 }
 
 .game-over[hidden] {
   display: none !important;
 }
 
-.game-over-card {
-  min-width: 220px;
-  padding: 22px 24px;
-  border-radius: 18px;
-  background: rgba(42, 36, 88, 0.96);
-  border: 2px solid rgba(123, 111, 224, 0.65);
+.game-over-inner {
+  width: 100%;
+  max-width: 100%;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* 与拉开间距时一致：居中成组，按钮锚在原位置 */
+  justify-content: center;
   text-align: center;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  min-height: 0;
+  gap: 340px;
+  transform: translateY(12px);
+  opacity: 0.9;
+  transition:
+    transform 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.35s ease;
+}
+
+.game-over.is-visible .game-over-inner {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+/* 仅文字上移，不带动按钮 */
+.game-over-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: -26%;
+  /* 相对原拉开布局再上移一截 */
+  transform: translateY(-72px);
+  flex-shrink: 0;
 }
 
 .game-over-title {
-  margin: 0;
-  font-size: 22px;
-  font-weight: 700;
+  margin: 0 0 22px;
+  font-size: clamp(28px, 8vw, 36px);
+  font-weight: 800;
+  letter-spacing: 0.02em;
   color: #ffffff;
+  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+}
+
+.game-over-score-label {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
 }
 
 .game-over-score {
-  margin: 12px 0 18px;
-  font-size: 15px;
-  color: rgba(255, 255, 255, 0.75);
+  margin: 0;
+  font-size: 0;
+  color: #ffffff;
 }
 
 .game-over-score span {
-  font-weight: 700;
-  font-size: 22px;
+  display: inline-block;
+  font-weight: 800;
+  font-size: clamp(48px, 14vw, 72px);
+  line-height: 1.05;
   color: #ffffff;
   font-variant-numeric: tabular-nums;
+  text-shadow: 0 6px 28px rgba(0, 0, 0, 0.3);
 }
 
+/* 按钮贴底 */
 .restart-btn {
   appearance: none;
   border: 0;
   border-radius: 999px;
-  padding: 12px 22px;
-  min-height: 44px;
-  background: linear-gradient(180deg, #ff8c3a, #e85d04);
+  padding: 16px 40px;
+  min-height: 52px;
+  min-width: min(280px, 78%);
+  /* 与「拉开一倍」时相同，保持按钮不动 */
+  margin-top: 0;
+  margin-bottom: -24%;
+  flex-shrink: 0;
+  background: linear-gradient(180deg, #ff9f43, #e85d04);
   color: #fff8e7;
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 700;
   cursor: pointer;
   pointer-events: auto;
-  box-shadow: 0 3px 0 #a33c00;
+  box-shadow:
+    0 4px 0 #a33c00,
+    0 12px 32px rgba(0, 0, 0, 0.35);
 }
 
 .restart-btn:active {
