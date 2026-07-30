@@ -1,7 +1,7 @@
 # Block Blast 项目实现与问题纪要
 
-> 整理日期：2026-07-29  
-> 范围：研究冻结 → DEFAULTS → M0–M2 实现 → 视觉/手感迭代 → feel 模块拆分  
+> 整理日期：2026-07-30  
+> 范围：研究冻结 → DEFAULTS → M0–M2 → 视觉/手感 → feel 拆分 → 消行反馈/3 波震动/屏震/debris → 死亡与结算 → 发块 Intent  
 > 工程根目录：`three-webgpu-cap-shell/`（Git：`zhixuan90103-lab/BlockBlast_New`）  
 > 研究材料：仓库上级 `../research/`（多数不在 shell 的 git 内）
 
@@ -10,10 +10,11 @@
 | 文档 | 用途 |
 |------|------|
 | [README.md](./README.md) | **文档索引与规范** |
-| [FEEL-DESIGN.md](./FEEL-DESIGN.md) | 手感问题 → 不变量（含 P17–P20 消行/震动/预设） |
-| [DEAL-DESIGN.md](./DEAL-DESIGN.md) | 发块阶段 |
+| [FEEL-DESIGN.md](./FEEL-DESIGN.md) | 手感问题 → 不变量（P1–P24，含消行/震动/死亡） |
+| [DEAL-PUSH-COMPLETE.md](./DEAL-PUSH-COMPLETE.md) | **发块完整规格 SSOT** |
+| [DEAL-DESIGN.md](./DEAL-DESIGN.md) | 发块短摘要（指针） |
 | [ENGINEERING.md](./ENGINEERING.md) | 底座、Capacitor、WebGPU、安全区 |
-| [ENTRYPOINTS.md](./ENTRYPOINTS.md) | 命令与启动链 |
+| [ENTRYPOINTS.md](./ENTRYPOINTS.md) | 命令与启动链 · DOM |
 | `src/game/defaults.js` | **运行时常量真源** |
 
 ---
@@ -81,19 +82,20 @@ src/
     feel/
       drag-session.js     # 拿起、指速增益、位移积分、短平滑
       ghost-policy.js     # engage、free±1、快/慢模、轴锁、preclear
-      haptics-ghost.js    # 换格 + 消除（瞬态+连续）
-    deal/                 # 阶段发块、bag、形状节奏
+      haptics-ghost.js    # 换格 + 消除 3 波 T–C
+    deal/                 # Intent 管线、局面、阶段节奏（见 DEAL-PUSH-COMPLETE）
     grid.js · forms.js · pieces.js · score.js
     layout.js · view.js · block-mesh.js
 plugins/native-haptics/   # Swift 真源；bootstrap 注入 iOS
+assets/icon-1024.png      # 扁平 App Icon 源图
 docs/                     # 见 docs/README.md 索引
 ```
 
 **职责边界：**
 
-- `game.js`：状态与事件编排，不堆投影公式。
+- `game.js`：状态与事件编排（含 clearFx / deathFx），不堆投影公式。
 - `feel/*`：可单测的手感策略，不碰 mesh 创建。
-- `view.js`：空槽常驻 + 填充层 + 消行缩转；`block-mesh` 圆角 **BufferGeometry + clone**。
+- `view.js`：空槽常驻 + 填充层 + 消行缩转 + debris + 屏震；`block-mesh` 圆角 **BufferGeometry + clone**。
 - `defaults.js` ↔ `tune.js` ↔ `feel-panel` / `feel-presets`：一处默认、运行时覆盖、预设槽。
 
 ---
@@ -289,7 +291,7 @@ Git 远程（历史会话约定）：`zhixuan90103-lab/BlockBlast_New`。
 | 缩放无顺序 | 全体同 t 缩 | 按落子质心决定**一边→另一边** delay |
 | 缺旋转感 | 仅 wobble | 与扫过同向 spin，峰值约 ±42° |
 | 曾加扫光 | 产品不要 | 已移除扫光 |
-| 消除震过多/过单 | 阶梯脉冲 / 仅瞬态 / 仅 continuous | **1 瞬态 + GAP + 连续（起→末插值）** |
+| 消除震过多/过单 | 阶梯脉冲 / 仅瞬态 / 仅 continuous | 当时定为 **1 瞬态 + GAP + 连续**；后扩展为 **3 波**（见 §12） |
 | 将消 vs 普通换格无差 | 同强度 | PREVIEW 与 GHOST 分参（面板可调） |
 | 要两套操作幅度 | 单 defaults | **手感1/2** 左下角切换；默认手感1 |
 | 落子改色变扁 | 整块 recolor | 不碰 bevel 层 color |
@@ -312,16 +314,13 @@ feel-presets.js
   手感1 = defaults · 手感2 = 同底 + 截图操作幅度
 ```
 
-### 9.3 震动默认（摘要，以 defaults 为准；手感1/2 共用）
+### 9.3 震动默认（§9 当时为 1T+1C；**现行 3 波见 §12**）
 
-| 项 | 约值 |
+| 项 | §9 约值（历史） |
 |----|------|
-| 普通挪格 I/S | 0.70 / 0.20 |
-| 将消格 I/S | 0.80 / 0.30 |
-| 消除瞬态 I/S | 1.00 / 0.45 |
-| GAP / 连续时长 | 30ms / 50ms |
-| 连续起 I/S | 0.55 / 0.15 |
-| 连续末 I/S | 0.10 / 0 |
+| 普通挪格 I/S | 0.70 / 0.20 → 后改为 **0.45 / 0.25** |
+| 将消格 I/S | 0.80 / 0.30 → 后改为 **0.70 / 0.30** |
+| 消除 | 当时 **1 瞬态 + GAP + 1 连续**；后扩展为 **3×(T+C)**（§12） |
 
 ### 9.4 手感2 操作差异（其余 = 手感1）
 
@@ -338,7 +337,7 @@ feel-presets.js
 |------|------|------|
 | 空槽 | 常驻底层 | 消行可读、无「格子没了」 |
 | 消行方向 | 单轴一边到另一边 | 对齐「扫过」体感，非径向爆炸 |
-| 消除震 | 瞬态+连续配方 | 既有确认点又有长度；参数全进面板 |
+| 消除震 | 瞬态+连续配方（后→3 波） | 既有确认点又有长度；参数全进面板 |
 | 预设 | 手感1 默认 | 标定真源在 defaults；手感2 对比幅度 |
 
 ---
@@ -352,12 +351,13 @@ feel-presets.js
 
 | 问题类型 | 优先资料 |
 |----------|----------|
-| 手感 / 消行 / 震动 / 预设（当前行为） | **带日期的新版** `A · FEEL-DESIGN …(2026-07-29…)` · `A · PROJECT-HISTORY …§9…` · Note「迭代纪要」 |
+| 手感 / 消行 / 震动 / 死亡 / 预设（当前行为） | **带日期的新版** FEEL-DESIGN · PROJECT-HISTORY **§12** · Note「迭代纪要」 |
+| 发块 / 局面 / Intent | **DEAL-PUSH-COMPLETE** + 代码 `deal/*` |
 | 常量数值 | 代码 `defaults.js`（RUNTIME-DEFAULTS 可能滞后） |
 | 规则证据 / 开源对照 | A · rules / scoring / SOURCES-EFFECTIVE + 开源 raw |
-| 文档从哪读 | `A · docs 索引与规范 README` |
+| 文档从哪读 | docs 索引 README |
 
-旧版无日期后缀的 FEEL-DESIGN / PROJECT-HISTORY 仅作历史，与 v2 冲突时 **以日期版为准**。
+旧版无日期后缀的 FEEL / HISTORY 仅作历史；与现行冲突时 **以最新日期章节 + 代码为准**。
 
 ### 问答提示
 
@@ -366,9 +366,12 @@ feel-presets.js
 - 「震动为什么两下？」→ P9 换格去重  
 - 「消行为什么还有空格？」→ P17 空槽常驻  
 - 「缩放从哪边开始？」→ P18 落子近边  
-- 「消除震是瞬态还是连续？」→ P19 配方  
+- 「消除震几波？」→ P19 · §12 三波 T–C  
 - 「手感1/2 差在哪？默认哪个？」→ P20 · 默认手感1  
-- 「模块怎么分的？」→ 架构 §2.1 / §9.2  
+- 「屏震怎么随行数变？」→ P21 · §12  
+- 「死亡闪红多久？」→ P23 · `FEEL_DEATH_FLASH_MS`  
+- 「发块 SSOT 在哪？」→ DEAL-PUSH-COMPLETE  
+- 「模块怎么分的？」→ 架构 §2.1 / §9.2 / §12.2  
 
 ### 同步约定
 
@@ -381,13 +384,85 @@ feel-presets.js
 | 路径 | 说明 |
 |------|------|
 | `docs/README.md` | 文档索引与规范 |
-| `src/game/defaults.js` | 规则 + FEEL + LAYOUT + COLOR |
+| `docs/DEAL-PUSH-COMPLETE.md` | 发块完整规格 |
+| `src/game/defaults.js` | 规则 + FEEL + LAYOUT + COLOR + DEATH |
 | `src/game/tune.js` | 运行时覆盖与 LAYOUT 键列表 |
 | `src/game/feel-presets.js` | 手感1/2 |
 | `src/feel-panel.js` | 调参 UI + 预设按钮 |
 | `src/game/feel/*` | 手感策略 |
-| `src/game/game.js` | 编排 · clearFx |
-| `src/game/view.js` | 空槽/填充 · 消行动画 |
+| `src/game/game.js` | 编排 · clearFx · deathFx |
+| `src/game/view.js` | 空槽/填充 · 消行 · debris · 屏震 |
+| `src/game/deal/*` | 发块管线 |
 | `src/viewport.js` | 稳定布局 / safe |
 | `plugins/native-haptics/` | iOS 震动真源 |
+| `assets/icon-1024.png` | App Icon 源 |
 | `../research/` | 立项研究文档集（多数不在 shell git） |
+
+---
+
+## 12. 消行增强 · 死亡 · 发块 · Icon（2026-07-29 → 07-30）
+
+对应 commits（由旧到新）：
+
+| Commit | 主题 |
+|--------|------|
+| `a9056e1` | clear debris、3 波 haptics、screen shake、docs |
+| `74af50e` | 屏震更柔但更强 |
+| `981be5d` | deal Intent / payoff / cavity / phase policy |
+| `e0b477a` | death 盘面擦除动画 + 全屏 game-over |
+| `17b7ec2` | 扁平 icon + deal 微调 |
+
+设计细则：[FEEL-DESIGN.md](./FEEL-DESIGN.md) §4–§8 · 发块 [DEAL-PUSH-COMPLETE.md](./DEAL-PUSH-COMPLETE.md)。
+
+### 12.1 问题 → 修改
+
+| 现象 | 原因 / 旧行为 | 修改 |
+|------|---------------|------|
+| 消除震只有 1T+1C 偏短 | §9 配方 | **3 波 T→C→T→C→T→C**，段间共用 GAP；波 2/3 递减 |
+| 将消/普通挪格偏重 | 默认 I 过高 | ghost 0.45/0.25 · preview 0.7/0.3（真机标定） |
+| 屏震无/过硬 | 无或方波 | 软起振+衰减；**峰值 = AMP_MIN+(L−1)×STEP**，单消=AMP_MIN |
+| 消行无碎块 | 仅缩转 | 方形 debris：重力/寿命/初速/每格数量可调 |
+| 死亡直接弹窗 | 无演出 | flash×2 → 自下填 → pause → 自上揭 → 全屏 GO |
+| GO 在 HUD 内布局挤 | overlay 挂 hud | death-flash / game-over 挂 **`#phone-frame`** |
+| 按钮跟着文案飘 | 整层 translate | 文案层与按钮布局分离 |
+| 发块阶段偏粗 | 仅 fill 阈值 | 局面分类 + Intent + G2 等（见 DEAL SSOT） |
+| 系统图标非扁平原画 | — | `assets/icon-1024.png` 同步 iOS AppIcon |
+
+### 12.2 架构补充
+
+```
+haptics-ghost.js
+  onClearFxStart → 序列 T1 C1 T2 C2 T3 C3（gap 串联）
+
+view.js
+  debrisRoot + 重力积分
+  boardView 位移 = 软包络 × amp(L)
+
+game.js
+  deathFx phases: flash | fill | pause | reveal
+  buildDeathDisplay / cellOpacity
+  finishDeathFx → setGameOver(true)
+
+index.html / style.css
+  [data-death-flash] · [data-game-over] 全屏半透
+```
+
+### 12.3 关键默认摘要（以 defaults 为准）
+
+| 域 | 常量 | 约值 |
+|----|------|------|
+| 视觉 clear | `FEEL_CLEAR_MS` / STAGGER / SHRINK | 280 / 0.42 / 0.4 |
+| 屏震 | AMP_MIN / STEP / MAX / HZ | 11 / 4 / 28 / 18 |
+| debris | COUNT / LIFE / GRAVITY / SPEED | 2 / 720 / 2200 / 2.8 |
+| 死亡 | FLASH / ROW / PAUSE | 600 / 72 / 420 |
+| 消除震 | GAP + 波1–3 | 见 FEEL §4.2 |
+
+### 12.4 决策
+
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| 消除震 | 固定 3 波而非按消行数变长 | 可预期、参数面板可控；视觉时长仍由 CLEAR_MS 管 |
+| 屏震 min | = 单消满幅度 | 避免 L=1 无感；多消再步进 |
+| 死亡 | 先演出再 GO | 对齐「完蛋了」节奏，非硬切 UI |
+| 发块文档 | DEAL-PUSH-COMPLETE 为 SSOT | 避免 DEAL-DESIGN 短文与完整需求分叉 |
+| Icon | 扁平 1024 | 商店/桌面一致、无复杂透视 |

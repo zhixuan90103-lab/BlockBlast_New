@@ -1,7 +1,8 @@
 # 项目文档索引
 
 > **规范**：以代码为准；文档描述行为与决策，常量数值以 `src/game/defaults.js` 为真源。  
-> 工程根：`three-webgpu-cap-shell/` · 远程：`zhixuan90103-lab/BlockBlast_New`
+> 工程根：`three-webgpu-cap-shell/` · 远程：`zhixuan90103-lab/BlockBlast_New`  
+> 文档整理：2026-07-30（对齐 deathFx · 3 波震动 · 屏震 · debris · 发块 SSOT）
 
 ## 阅读顺序（建议）
 
@@ -9,7 +10,7 @@
 |------|------|
 | **AI / 新窗口** | [../AGENTS.md](../AGENTS.md) → 本索引 → 按需下钻 |
 | **人类上手** | [../README.md](../README.md) → ENTRYPOINTS |
-| **改手感 / 消行 / 震动** | [FEEL-DESIGN.md](./FEEL-DESIGN.md) |
+| **改手感 / 消行 / 震动 / 死亡** | [FEEL-DESIGN.md](./FEEL-DESIGN.md) |
 | **改发块** | **[DEAL-PUSH-COMPLETE.md](./DEAL-PUSH-COMPLETE.md)**（完整规格 SSOT）· [DEAL-SPEC.md](./DEAL-SPEC.md) · [DEAL-REFACTOR-DESIGN.md](./DEAL-REFACTOR-DESIGN.md) |
 | **踩坑与迭代史** | [PROJECT-HISTORY.md](./PROJECT-HISTORY.md) |
 | **底座 / Capacitor** | [ENGINEERING.md](./ENGINEERING.md) |
@@ -21,13 +22,13 @@
 |------|------|----------|
 | [ENTRYPOINTS.md](./ENTRYPOINTS.md) | 命令、DOM、Web/iOS 启动链 | 入口或脚本变更时 |
 | [ENGINEERING.md](./ENGINEERING.md) | WebGPU、Capacitor、Safe Area、插件 | 底座约定变更时 |
-| [FEEL-DESIGN.md](./FEEL-DESIGN.md) | 拖拽/投影/消行视觉/震动/预设；问题→规则 | **手感迭代后必更新** |
+| [FEEL-DESIGN.md](./FEEL-DESIGN.md) | 拖拽/投影/消行/屏震/debris/3 波震动/死亡/预设；P1–P24 | **手感迭代后必更新** |
 | [DEAL-PUSH-COMPLETE.md](./DEAL-PUSH-COMPLETE.md) | **发块完整规格**：产品共识、需求 ID、调研、局面、架构、验收、演进 | **需求/发块变更时必更** |
 | [DEAL-REFACTOR-DESIGN.md](./DEAL-REFACTOR-DESIGN.md) | 重构设计 + 历史需求表 | 架构大改时同步 |
 | [DEAL-SPEC.md](./DEAL-SPEC.md) | 现行行为短摘要 | 行为变更时同步 |
-| [DEAL-DESIGN.md](./DEAL-DESIGN.md) | 短摘要 | 可选 |
+| [DEAL-DESIGN.md](./DEAL-DESIGN.md) | **短摘要 + 指向 SSOT**（勿当完整规格） | 可选；大改时补指针 |
 | [DEAL-RHYTHM.md](./DEAL-RHYTHM.md) | 模块/阶段速查 | 节奏表变更时 |
-| [PROJECT-HISTORY.md](./PROJECT-HISTORY.md) | 里程碑、问题全表、决策日志 | 大迭代后追加章节 |
+| [PROJECT-HISTORY.md](./PROJECT-HISTORY.md) | 里程碑、问题全表、决策日志 | 大迭代后**追加**章节 |
 | [RUNTIME-DEFAULTS.md](./RUNTIME-DEFAULTS.md) | defaults 摘录（可能过期） | 可选；改 defaults 后择机同步 |
 | [../plugins/native-haptics/README.md](../plugins/native-haptics/README.md) | 原生震动 API | 插件 API 变更时 |
 
@@ -38,9 +39,10 @@
 | 规则/手感/发块/颜色常量 | `src/game/defaults.js` |
 | 运行时覆盖 + 调参面板字段 | `src/game/tune.js` · `src/feel-panel.js` |
 | 手感预设 1/2 | `src/game/feel-presets.js` |
-| 消行视觉 | `src/game/view.js` · `game.js` clearFx |
-| 震动曲线 | `src/game/feel/haptics-ghost.js` |
-| 发块 | `src/game/deal/*` |
+| 消行视觉 / 屏震 / debris | `src/game/view.js` · `game.js` clearFx |
+| 死亡演出 / 结算 overlay | `src/game/game.js` deathFx · `style.css` · `index.html` |
+| 震动曲线（含 3 波） | `src/game/feel/haptics-ghost.js` |
+| 发块 | `src/game/deal/*`（入口 `pipeline.js`） |
 | 原生震动桥 | `src/native-haptics.js` · `plugins/native-haptics/` |
 
 ## 文档约定
@@ -50,3 +52,18 @@
 3. **口语「打包」** = `npm run cap:sync`（build + 同步 iOS）。  
 4. AGENTS / README 保持短；细节下沉到 `docs/*`。  
 5. 日期与 commit 可在 HISTORY 章节标注，便于回溯。  
+6. **发块 SSOT** 唯一完整正文是 `DEAL-PUSH-COMPLETE.md`；`DEAL-DESIGN` / `DEAL-SPEC` 只做摘要与指针。  
+7. 改手感/消行/死亡/震动后：更新 **FEEL-DESIGN** + **PROJECT-HISTORY 追加节**；入口 DOM 变则更新 **ENTRYPOINTS**。  
+8. 上级 `../research/` 多数不在 shell git 内；运行时结论以代码与本目录为准。  
+
+## 近期主题速查（2026-07-29 → 07-30）
+
+| 主题 | 文档位置 | 代码 |
+|------|----------|------|
+| 空槽常驻 + 消行缩转 | FEEL §3 · HISTORY §9 | `view.js` boardCells/Fills |
+| 3 波消除震动 T–C | FEEL §4 · HISTORY §12 | `haptics-ghost.js` |
+| 屏震按消行数 | FEEL §6 · HISTORY §12 | `view.js` |
+| 碎裂粒子 | FEEL §7 · HISTORY §12 | `view.js` debris |
+| 死亡闪红/填/揭 + GO | FEEL §8 · HISTORY §12 | `game.js` deathFx |
+| 发块 Intent / 局面 | DEAL-PUSH-COMPLETE | `deal/*` |
+| 扁平 App Icon | HISTORY §12 | `assets/icon-1024.png` |

@@ -16,6 +16,7 @@ import {
   FEEL_CLEAR_MS,
   FEEL_CLEAR_STAGGER,
   FEEL_COMMIT_MS,
+  FEEL_DEATH_FLASH_MS,
   FEEL_DEATH_PAUSE_MS,
   FEEL_DEATH_ROW_MS,
   FEEL_HIT_SLOP,
@@ -101,12 +102,13 @@ export function createGame(opts) {
   let clearFx = null;
 
   /**
-   * 死亡演出：自下而上填满 → 停顿 → 自上而下露出死亡盘面 → 结算
+   * 死亡演出：闪红×2 → 自下而上填满 → 停顿 → 自上而下露出死亡盘面 → 结算
    * @type {null | {
-   *   phase: 'fill' | 'pause' | 'reveal',
+   *   phase: 'flash' | 'fill' | 'pause' | 'reveal',
    *   start: number,
    *   rowMs: number,
    *   pauseMs: number,
+   *   flashMs: number,
    *   snapshot: (number|null)[][],
    *   fillers: (number|null)[][],
    *   displayCells: (number|null)[][],
@@ -131,9 +133,10 @@ export function createGame(opts) {
   const bestEl = hud.querySelector('[data-best-score]');
   const phaseEl = hud.querySelector('[data-game-phase]');
   const statusEl = hud.querySelector('#status');
-  // 结算全屏层在 phone-frame 下，不在 #hud 内
+  // 结算/闪红层在 phone-frame 下，不在 #hud 内
   const overlayRoot = frameEl || hud;
   const overlayEl = overlayRoot.querySelector('[data-game-over]');
+  const deathFlashEl = overlayRoot.querySelector('[data-death-flash]');
   const finalScoreEl = overlayRoot.querySelector('[data-final-score]');
   const restartBtn = overlayRoot.querySelector('[data-restart]');
 
@@ -281,6 +284,19 @@ export function createGame(opts) {
     return { cells, opacity };
   }
 
+  function setDeathFlash(on) {
+    if (!deathFlashEl) return;
+    deathFlashEl.classList.toggle('is-active', !!on);
+    deathFlashEl.setAttribute('aria-hidden', on ? 'false' : 'true');
+    if (on) {
+      // 重触发 CSS 动画
+      deathFlashEl.classList.remove('is-active');
+      // force reflow
+      void deathFlashEl.offsetWidth;
+      deathFlashEl.classList.add('is-active');
+    }
+  }
+
   function startDeathFx() {
     if (deathFx || gameOver) return;
     drag = null;
@@ -289,17 +305,20 @@ export function createGame(opts) {
     const fillers = buildDeathFillers(snapshot);
     const rowMs = FEEL_DEATH_ROW_MS;
     const pauseMs = FEEL_DEATH_PAUSE_MS;
+    const flashMs = FEEL_DEATH_FLASH_MS;
     const disp = buildDeathDisplay('fill', 0, snapshot, fillers);
     deathFx = {
-      phase: 'fill',
+      phase: 'flash',
       start: performance.now(),
       rowMs,
       pauseMs,
+      flashMs,
       snapshot,
       fillers,
       displayCells: disp.cells,
       displayOpacity: disp.opacity,
     };
+    setDeathFlash(true);
     // 结算数据先写好，动画结束后再亮 overlay
     if (finalScoreEl) finalScoreEl.textContent = String(scoreState.score);
     if (scoreState.score > bestScore) {
@@ -316,6 +335,7 @@ export function createGame(opts) {
 
   function finishDeathFx() {
     deathFx = null;
+    setDeathFlash(false);
     setGameOver(true);
     paint();
   }
@@ -323,8 +343,24 @@ export function createGame(opts) {
   function tickDeathFx() {
     if (!deathFx) return;
     const now = performance.now();
-    const { phase, start, rowMs, pauseMs, snapshot, fillers } = deathFx;
+    const { phase, start, rowMs, pauseMs, flashMs, snapshot, fillers } = deathFx;
     const fillDur = GRID * rowMs;
+
+    // 开场全屏闪红两次，再开始上升填块
+    if (phase === 'flash') {
+      const elapsed = now - start;
+      // 闪红期间保持死亡盘面
+      const hold = buildDeathDisplay('fill', 0, snapshot, fillers);
+      deathFx.displayCells = hold.cells;
+      deathFx.displayOpacity = hold.opacity;
+      if (elapsed >= (flashMs ?? FEEL_DEATH_FLASH_MS)) {
+        setDeathFlash(false);
+        deathFx.phase = 'fill';
+        deathFx.start = now;
+      }
+      paint();
+      return;
+    }
 
     if (phase === 'fill') {
       const elapsed = now - start;
@@ -387,6 +423,7 @@ export function createGame(opts) {
     hover = null;
     clearFx = null;
     deathFx = null;
+    setDeathFlash(false);
     ghostHaptics.onClearFxEnd?.();
     boardView.clearAllDebris?.();
     grid.reset();

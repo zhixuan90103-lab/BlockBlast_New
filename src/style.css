@@ -238,6 +238,62 @@ header {
   color: rgba(255, 255, 255, 0.65);
 }
 
+/* 死亡开场：全屏闪红两次（柔和淡入淡出） */
+.death-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 45;
+  pointer-events: none;
+  background: rgba(220, 40, 55, 0.58);
+  opacity: 0;
+  visibility: hidden;
+}
+
+.death-flash.is-active {
+  visibility: visible;
+  /* 与 FEEL_DEATH_FLASH_MS = 600 对齐 */
+  animation: death-flash-twice 0.6s ease-in-out forwards;
+}
+
+@keyframes death-flash-twice {
+  /* 第一次：缓入 → 峰值 → 缓出 */
+  0% {
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.35;
+  }
+  22% {
+    opacity: 0.72;
+  }
+  32% {
+    opacity: 0.28;
+  }
+  42% {
+    opacity: 0;
+  }
+  /* 短间隔 */
+  48% {
+    opacity: 0;
+  }
+  /* 第二次 */
+  58% {
+    opacity: 0.3;
+  }
+  68% {
+    opacity: 0.68;
+  }
+  80% {
+    opacity: 0.22;
+  }
+  92% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 /* Game over — 全屏结算（盖住整个 phone-frame） */
 .game-over {
   position: absolute;

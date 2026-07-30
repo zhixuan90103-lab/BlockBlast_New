@@ -1,7 +1,7 @@
 # Block Blast（three-webgpu-cap-shell）
 
 **Block Blast! Classic 手感向复刻**：Three.js + **WebGPU** + Vite + **Capacitor iOS** + 自研 **NativeHaptics**。  
-在可复用壳之上实现 8×8 盘、tray、拖放投影、消行反馈、阶段发块与真机调参。
+在可复用壳之上实现 8×8 盘、tray、拖放投影、消行反馈（缩转 / 碎裂 / 屏震 / 3 波震动）、死亡演出、阶段发块与真机调参。
 
 桌面预览使用 **手机比例框（393×852）**；真机 App 全屏 + 系统 Safe Area。
 
@@ -13,9 +13,10 @@
 |------|------|------|
 | **[AGENTS.md](./AGENTS.md)** | AI / 新窗口 | 一页纸：入口、约定 |
 | **[docs/README.md](./docs/README.md)** | 所有人 | **文档索引与规范** |
-| **[docs/FEEL-DESIGN.md](./docs/FEEL-DESIGN.md)** | 改手感/消行/震动 | 问题→规则、预设 |
-| **[docs/PROJECT-HISTORY.md](./docs/PROJECT-HISTORY.md)** | 查踩坑 | 里程碑与问题全表 |
-| **[docs/DEAL-DESIGN.md](./docs/DEAL-DESIGN.md)** | 改发块 | 阶段难度 |
+| **[docs/FEEL-DESIGN.md](./docs/FEEL-DESIGN.md)** | 改手感/消行/震动/死亡 | 问题→规则、预设（P1–P24） |
+| **[docs/PROJECT-HISTORY.md](./docs/PROJECT-HISTORY.md)** | 查踩坑 | 里程碑与问题全表（§12 最新） |
+| **[docs/DEAL-PUSH-COMPLETE.md](./docs/DEAL-PUSH-COMPLETE.md)** | 改发块 | **完整规格 SSOT** |
+| **[docs/DEAL-DESIGN.md](./docs/DEAL-DESIGN.md)** | 发块速览 | 短摘要（指向 SSOT） |
 | **[docs/ENTRYPOINTS.md](./docs/ENTRYPOINTS.md)** | 查启动链 | 命令 / DOM / iOS |
 | **[docs/ENGINEERING.md](./docs/ENGINEERING.md)** | 维护底座 | Capacitor / WebGPU |
 | **本 README** | 人类上手 | 安装、dev、真机 |
@@ -58,11 +59,25 @@ index.html
 DOM 约定（勿拆）：
 
 ```text
-#letterbox > #phone-frame > (#stage | #hud)
+#letterbox > #phone-frame > (#stage | #hud | death-flash | game-over)
 ```
 
 - `#stage`：3D canvas  
-- `#hud`：分数与安全区 UI
+- `#hud`：分数与安全区 UI  
+- `[data-death-flash]` / `[data-game-over]`：死亡闪红与全屏结算（盖住 stage+hud）
+
+---
+
+## 功能快照（与文档对齐）
+
+| 域 | 要点 |
+|----|------|
+| 操作 | 槽固定拿起、指速增益、快/慢双模 ghost、仅合法投影 |
+| 消行 | 空槽常驻、方向缩转、debris、屏震按行数 |
+| 震动 | 换格 / 将消预览 / 消除 **3 波 T–C**（仅 iOS 原生） |
+| 死亡 | 闪红×2 → 自下填 → 停顿 → 自上揭 → 全屏 GO |
+| 发块 | 阶段 + 局面 Intent（见 DEAL-PUSH-COMPLETE） |
+| 调参 | 手感1/2 + 面板（defaults 为真源） |
 
 ---
 
@@ -84,6 +99,7 @@ npm run cap:sync    # build + sync
 | 相对资源路径 | `vite.config.js` → `base: './'` |
 | 无双重 Safe Area | `ios.contentInset: "never"` |
 | 震动原生真源 | `plugins/native-haptics/*.swift` |
+| App Icon | `assets/icon-1024.png` |
 
 占位 ID：`com.example.webgpushell` —— 长期开发请改成自己的。
 
@@ -116,7 +132,7 @@ npm run cap:sync    # build + sync
 ## 硬性约定（摘要）
 
 1. Capacitor 必须用相对路径：`base: './'`  
-2. UI 进 `#hud`，安全区用 `--safe-*`  
+2. UI 进 `#hud`，安全区用 `--safe-*`；全屏 overlay 挂 `#phone-frame`  
 3. 渲染尺寸跟 `#phone-frame`，不要裸用整窗 `innerWidth`  
 4. 无 WebGPU 则明确失败，不静默 WebGL  
 5. 改 Swift 插件改真源后跑 `ios:bootstrap`  

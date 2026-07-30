@@ -11,7 +11,7 @@ import {
 } from './tune.js';
 
 /** 升版本：震动默认更新后避免旧 localStorage 盖住出厂值 */
-const PRESET_VER = 'v9';
+const PRESET_VER = 'v10';
 const STORAGE_PRESET = (id) => `bb_feel_preset_${PRESET_VER}_${id}`;
 const STORAGE_ACTIVE = `bb_feel_preset_${PRESET_VER}_active`;
 

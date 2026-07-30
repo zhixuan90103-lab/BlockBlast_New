@@ -1,6 +1,6 @@
 # 手感与反馈设计（问题 → 约束）
 
-迭代踩坑沉淀。实现：`src/game/feel/*` · `view.js` · `feel-presets.js`。  
+迭代踩坑沉淀。实现：`src/game/feel/*` · `view.js` · `feel-presets.js` · `game.js`（clearFx / deathFx）。  
 常量真源：`defaults.js`；运行时覆盖：`tune.js` + 调参面板。  
 全景纪要：[PROJECT-HISTORY.md](./PROJECT-HISTORY.md) · 文档索引：[README.md](./README.md)。
 
@@ -14,12 +14,15 @@ IDLE → PICKUP(固定槽姿态, 无投影, 无震动)
           ├ ghost null | valid hover（可 preclear 预警）
           └ pointerup → COMMIT(fits)
                 ├ 无消线 → 计分 / 可能刷 tray
-                └ 有消线 → clearFx 动画 + 消除震动 → clearLines → 计分
+                └ 有消线 → clearFx（缩转 + 碎裂 + 屏震 + 3 波震动）→ clearLines → 计分
+
+任意时刻 tray 不可放 → deathFx（闪红 → 自下而上填 → 停顿 → 自上而下揭开）
+                     → 全屏 game-over overlay
 ```
 
 ---
 
-## 2. 问题 → 不变量（P1–P16 及续）
+## 2. 问题 → 不变量（P1–P24）
 
 | ID | 现象 | 不变量 / 规则 |
 |----|------|----------------|
@@ -41,8 +44,12 @@ IDLE → PICKUP(固定槽姿态, 无投影, 无震动)
 | P16 | Vite 500 | JSDoc 禁止嵌套 `/**` |
 | **P17** | 消行整格消失/压暗 | 见 §3 盘面分层与消行视觉 |
 | **P18** | 消行缩放无方向感 | 见 §3 单向扫序 + 同向旋转 |
-| **P19** | 消除震动过碎/过单 | 见 §4 消除配方：1 瞬态 + 间隔 + 连续震 |
+| **P19** | 消除震动过碎/过单 | 见 §4 **3 波 T–C** 配方 |
 | **P20** | 真机要两套操作幅度 | 见 §5 手感1 / 手感2 预设 |
+| **P21** | 消行无「冲击感」 | 见 §6 屏震：软包络 + 按消行数幅度 |
+| **P22** | 消行缺碎裂余韵 | 见 §7 方形 debris + 重力 |
+| **P23** | 死亡太硬/太快 | 见 §8 deathFx 四阶段 |
+| **P24** | 结算挡操作/布局乱 | 见 §8 全屏半透 game-over（`#phone-frame` 内，非 `#hud`） |
 
 ---
 
@@ -61,10 +68,11 @@ IDLE → PICKUP(固定槽姿态, 无投影, 无震动)
 
 1. `place` → `findFullLines`  
 2. `clearFx = { lines, cells(delay01, spin), sweep, start, duration }`  
-3. 每帧 `paintBoard` 按 delay 缩填充；空槽始终可见  
+3. 每帧 `paintBoard` 按 delay 缩填充；**同步** spawn debris、board 屏震  
 4. 动画结束 → `clearLines` → 计分 / tray  
 
-视觉时长：`FEEL_CLEAR_MS`（与震动连续时长独立）。
+视觉时长：`FEEL_CLEAR_MS`（默认 280ms）。  
+错峰 / 单格窗：`FEEL_CLEAR_STAGGER` · `FEEL_CLEAR_SHRINK`。
 
 ### 3.3 缩放方向（P18）
 
@@ -95,30 +103,42 @@ IDLE → PICKUP(固定槽姿态, 无投影, 无震动)
 |------|------|----------|------|
 | 合法投影换格（无将消） | 瞬态 | `FEEL_HAPTIC_GHOST_*` | `onHover` |
 | 投影到将消格 | 瞬态（更强） | `FEEL_HAPTIC_CLEAR_PREVIEW_*` | `onHover` |
-| 确认消除（动画段） | **1 瞬态 + gap + 1 连续** | `FEEL_HAPTIC_CLEAR_FX_*` | `onClearFxStart` |
+| 确认消除（动画段） | **3 波 T→C**（段间 GAP） | `FEEL_HAPTIC_CLEAR_FX_*` | `onClearFxStart` |
 
 仅 **iOS 原生**；浏览器 `not_native_ios`。
 
-### 4.2 消除配方（P19）
+### 4.2 消除配方（P19，现行）
 
 ```
-瞬态(TRANSIENT_I/S)
-  → 等待 GAP_MS
-  → startContinuous(START_I/S)
-  → 时长 DURATION_MS 内线性插值到 END_I/S
-  → stopContinuous
+T1 → gap → C1 → gap → T2 → gap → C2 → gap → T3 → gap → C3
 ```
 
-| 参数 | 含义 |
-|------|------|
-| `…_TRANSIENT_INTENSITY/SHARPNESS` | 第一记；强度 0 可关 |
-| `…_GAP_MS` | 瞬态 → 连续的间隔 |
-| `…_DURATION_MS` | 连续震长度；0 可关 |
-| `…_START_*` / `…_END_*` | 连续起/末强度与锐度 |
+每波：`瞬态(Tn I/S)` → `GAP_MS` → `连续(Cn 起→末插值, duration)`。  
+波 2/3 默认强度递减（头重尾轻）。
 
-- 连续时长 **独立于** `FEEL_CLEAR_MS` 视觉。  
-- 重开 `onClearFxEnd` 强制 stop + 清定时器。  
-- 历史弯路：多阶 delay 脉冲 → 仅 1 瞬态 → 仅 continuous → **现配方**。
+| 参数族 | 含义 |
+|--------|------|
+| `…_GAP_MS` | 所有段间共用间隔 |
+| `…_T{n}_INTENSITY/SHARPNESS` | 第 n 记瞬态；强度 0 可关 |
+| `…_C{n}_DURATION_MS` | 第 n 段连续时长；0 可关 |
+| `…_C{n}_START_*` / `…_END_*` | 连续起/末强度与锐度 |
+
+兼容旧名：`…_TRANSIENT_*` / `…_DURATION_MS` / `…_START_*` / `…_END_*` → **波 1**。
+
+- 连续总时长 **独立于** `FEEL_CLEAR_MS` 视觉。  
+- 重开 / restart：`onClearFxEnd` 强制 stop + 清定时器。  
+- 历史：多阶 delay 脉冲 → 仅 1 瞬态 → 1T+1C → **现 3×(T+C)**。
+
+默认摘要（以 `defaults.js` 为准）：
+
+| 项 | 约值 |
+|----|------|
+| 普通挪格 I/S | 0.45 / 0.25 |
+| 将消格 I/S | 0.70 / 0.30 |
+| GAP | 30ms |
+| 波1 T / C 起→末 | 1.0·0.45 / 50ms · 0.4→0.2 |
+| 波2 | 0.75·0.45 / 45ms · 0.32→0.15 |
+| 波3 | 0.55·0.4 / 40ms · 0.25→0.1 |
 
 ### 4.3 换格去重
 
@@ -147,7 +167,7 @@ UI：左下角按钮（`feel-panel.js` + `.feel-preset-bar`）。
 存储键版本：`bb_feel_preset_v3_*`（升版避免旧存档污染）。  
 启动：`getActiveFeelPresetId()` 默认 **`'1'`**。
 
-手感2 操作差异摘要（其余同手感1）：
+手感2 操作差异摘要（其余同手感1，含震动/消行/发块）：
 
 | 键 | 手感2 |
 |----|--------|
@@ -161,21 +181,88 @@ UI：左下角按钮（`feel-panel.js` + `.feel-preset-bar`）。
 
 ---
 
-## 6. 模块职责
+## 6. 消行屏震（P21）
+
+- 作用对象：`boardView` 位移（单位≈像素），**时长 = `FEEL_CLEAR_MS`**。  
+- 包络：**软起振 + 平滑衰减**（偏柔和，避免方波硬切）。  
+- 幅度按**本次消行数 `L`**：
+  - 峰值 `= clamp(AMP_MIN + (L-1)×STEP, AMP_MIN, AMP_MAX)`  
+  - **单消幅度 = AMP_MIN**（不是 0；避免「消 1 行完全无震」）  
+- 振荡频率：`FEEL_CLEAR_SHAKE_HZ`（偏低更柔）。
+
+| 参数 | 含义（默认见 defaults） |
+|------|-------------------------|
+| `FEEL_CLEAR_SHAKE_AMP_MIN` | 单消峰值（≈11） |
+| `FEEL_CLEAR_SHAKE_AMP_STEP` | 每多 1 条 +step（≈4） |
+| `FEEL_CLEAR_SHAKE_AMP_MAX` | 封顶（≈28） |
+| `FEEL_CLEAR_SHAKE_HZ` | 频率（≈18） |
+
+实现：`view.js`。
+
+---
+
+## 7. 碎裂粒子（P22）
+
+消行填充缩到阈值时，按格 spawn 方形碎片（不挡空槽层）。
+
+| 参数 | 含义 |
+|------|------|
+| `FEEL_CLEAR_DEBRIS_COUNT` | 每格粒子数（0 关；默认 2） |
+| `FEEL_CLEAR_DEBRIS_LIFE_MS` | 存活（可长于 clear 动画；默认 720） |
+| `FEEL_CLEAR_DEBRIS_GRAVITY` | 重力（世界单位/s²） |
+| `FEEL_CLEAR_DEBRIS_SPEED` | 初速系数 × 格边 |
+
+行为要点：随机方向弹出 → 重力下落 → life 内淡出/移除；可跨 clear 结束仍飘一会。
+
+实现：`view.js` debrisRoot。
+
+---
+
+## 8. 死亡演出与结算（P23 / P24）
+
+### 8.1 触发
+
+`tray` 用尽刷新后，若剩余块在当前盘 **全部 instant 不可放** → `startDeathFx()`（非立即弹窗）。
+
+### 8.2 阶段时序
+
+```
+flash  →  fill  →  pause  →  reveal  →  game-over visible
+```
+
+| 阶段 | 时长常量 | 表现 |
+|------|----------|------|
+| **flash** | `FEEL_DEATH_FLASH_MS`（600） | 全屏柔和闪红 **两次**（CSS `death-flash-twice` 0.6s） |
+| **fill** | `GRID × FEEL_DEATH_ROW_MS` | 自**下而上**用填充色盖盘（排内淡入） |
+| **pause** | `FEEL_DEATH_PAUSE_MS`（420） | 满盘停顿 |
+| **reveal** | 同上 row 总长 | 自**上而下**揭开，露出死亡盘面 |
+| **overlay** | — | `finishDeathFx` → 半透全屏 Game Over + 分 + Play Again |
+
+### 8.3 DOM / 布局
+
+- `[data-death-flash]`、`[data-game-over]` 挂在 **`#phone-frame`** 内、**`#hud` 外**，盖住 stage + HUD。  
+- 结算半透全屏；文案居中、按钮在底部安全区附近（只平移文案层时勿误移按钮）。  
+- 死亡期间：锁输入、tray 显示空、无 drag/hover/clearFx。
+
+实现：`game.js` deathFx · `style.css` · `index.html`。
+
+---
+
+## 9. 模块职责
 
 | 模块 | 职责 |
 |------|------|
 | `feel/drag-session.js` | 拿起、指速增益、积分、平滑 |
 | `feel/ghost-policy.js` | engage、free/sticky、快慢、轴锁、preclear |
-| `feel/haptics-ghost.js` | 换格 + 消除震动曲线 |
+| `feel/haptics-ghost.js` | 换格 + **3 波**消除震动 |
 | `feel-presets.js` | 手感1/2 工厂、存取、应用 |
 | `feel-panel.js` | 滑条 + 预设按钮 + 重置 |
-| `view.js` | 空槽/填充分层、将消预警、clear 缩转 |
-| `game.js` | clearFx 编排、collectLineCells、指针 |
+| `view.js` | 空槽/填充、将消预警、clear 缩转、**debris、屏震** |
+| `game.js` | clearFx · collectLineCells · **deathFx** · 指针 · game-over |
 
 ---
 
-## 7. Ghost 策略摘要
+## 10. Ghost 策略摘要
 
 1. `!isBoardEngaged(bottomRow)` → null  
 2. `chebyshev(free, ghost) > FEEL_GHOST_MAX_LAG` → null  
@@ -185,12 +272,13 @@ UI：左下角按钮（`feel-panel.js` + `.feel-preset-bar`）。
 
 ---
 
-## 8. 调参
+## 11. 调参
 
 - 布局 key：`LAYOUT_TUNE_KEYS` → `relayout`  
 - 其余：`setTune` + `paint`  
 - 默认：`defaults.js`；手感1 出厂同步 defaults  
-- 真机改满意后：**长按手感1** 可固化到本机槽（可选）
+- 真机改满意后：**长按手感1** 可固化到本机槽（可选）  
+- 面板分组含：拖拽、投影、震动（投影/将消/消除 3 波）、屏震、debris、发块节奏  
 
 ### 加大「操作幅度」优先项
 
@@ -204,17 +292,18 @@ UI：左下角按钮（`feel-panel.js` + `.feel-preset-bar`）。
 
 ---
 
-## 9. 相关文件速查
+## 12. 相关文件速查
 
 ```
-src/game/defaults.js          # 常量真源
+src/game/defaults.js          # 常量真源（含 CLEAR_*/DEATH_*/HAPTIC_*）
 src/game/tune.js              # 运行时 + TUNE_FIELDS
 src/game/feel-presets.js      # 手感1/2
 src/game/feel/haptics-ghost.js
 src/game/feel/ghost-policy.js
 src/game/feel/drag-session.js
-src/game/view.js              # boardCells + boardFills + clear 动画
-src/game/game.js              # clearFx · collectLineCells
+src/game/view.js              # boardCells/Fills · debris · shake · clear 动画
+src/game/game.js              # clearFx · deathFx · collectLineCells
 src/feel-panel.js
-src/style.css                 # .feel-preset-bar
+src/style.css                 # .feel-preset-bar · .death-flash · .game-over
+index.html                    # data-death-flash · data-game-over
 ```

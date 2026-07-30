@@ -13,9 +13,9 @@
 | 优先 | 文档 |
 |------|------|
 | 1 | 本文件 + [docs/README.md](./docs/README.md) |
-| 2 手感/消行/震动 | [docs/FEEL-DESIGN.md](./docs/FEEL-DESIGN.md) |
-| 3 发块 | [docs/DEAL-DESIGN.md](./docs/DEAL-DESIGN.md) |
-| 4 踩坑史 | [docs/PROJECT-HISTORY.md](./docs/PROJECT-HISTORY.md) |
+| 2 手感/消行/震动/死亡 | [docs/FEEL-DESIGN.md](./docs/FEEL-DESIGN.md) |
+| 3 发块 | **[docs/DEAL-PUSH-COMPLETE.md](./docs/DEAL-PUSH-COMPLETE.md)**（SSOT；[DEAL-DESIGN](./docs/DEAL-DESIGN.md) 仅摘要） |
+| 4 踩坑史 | [docs/PROJECT-HISTORY.md](./docs/PROJECT-HISTORY.md)（最新 §12） |
 | 5 底座 | [docs/ENGINEERING.md](./docs/ENGINEERING.md) |
 
 **常量真源**：`src/game/defaults.js`（不要只信 RUNTIME-DEFAULTS 摘录）。
@@ -25,15 +25,16 @@
 | 职责 | 文件 |
 |------|------|
 | Web 启动 | `index.html` → `src/main.js` → `createGame` |
-| 规则编排 | `src/game/game.js` |
+| 规则编排 | `src/game/game.js`（clearFx · deathFx · game-over） |
 | 手感 | `src/game/feel/*` · `feel-presets.js` · `feel-panel.js` |
-| 渲染 | `src/game/view.js` · `block-mesh.js` · `layout.js` |
-| 发块 | `src/game/deal/*` |
+| 渲染 / FX | `src/game/view.js`（空槽/填充 · debris · 屏震） · `block-mesh.js` · `layout.js` |
+| 发块 | `src/game/deal/*`（`pipeline.js`） |
 | 常量 / 调参 | `defaults.js` · `tune.js` |
 | WebGPU | `src/create-renderer.js` |
 | 视口 | `src/viewport.js` · `style.css` |
-| 震动 JS | `src/native-haptics.js` |
+| 震动 JS | `src/native-haptics.js` · 业务曲线 `feel/haptics-ghost.js`（**3 波 T–C**） |
 | 震动 iOS | `plugins/native-haptics/*.swift` |
+| App Icon | `assets/icon-1024.png` → iOS AppIcon |
 
 ## 常用命令
 
@@ -51,24 +52,29 @@ npm run ios:bootstrap
 1. Vite **`base: './'`**（Capacitor 相对路径）。  
 2. **`webDir: "dist"`** 与 Vite outDir 一致。  
 3. **`ios.contentInset: "never"`**，Safe Area 只走 CSS `env(...)`。  
-4. 交互 UI 在 `#hud`；3D 在 `#stage`。  
+4. 交互 UI 在 `#hud`；3D 在 `#stage`；**死亡闪红 / 全屏结算** 在 `#phone-frame` 内、`#hud` 外（`[data-death-flash]` / `[data-game-over]`）。  
 5. **业务震动曲线**写在 `feel/haptics-ghost.js`，原生层只提供 transient/continuous API。  
 6. 改布局尺寸：同步 `viewport.js` DESIGN_* 与 CSS 393/852（若仍用设计框）。  
 7. 圆角几何：BufferGeometry + clone；共享模板勿 dispose。  
-8. 文档：改手感/消行后更新 **FEEL-DESIGN** 与 **PROJECT-HISTORY** 相关节。
+8. 文档：改手感/消行/死亡/震动 → 更新 **FEEL-DESIGN** + **PROJECT-HISTORY** 相关节；改发块 → **DEAL-PUSH-COMPLETE**；入口 DOM → **ENTRYPOINTS**。
 
 ## DOM
 
 ```
-#letterbox > #phone-frame > (#stage | #hud | #feel-panel)
+#letterbox > #phone-frame
+              ├ #stage
+              ├ #hud                 ← 分数等
+              ├ [data-death-flash]   ← 死亡闪红
+              ├ [data-game-over]     ← 全屏结算
+              └ #feel-panel          ← 动态挂载
 ```
 
-左下角：**手感1 / 手感2**；右下角：**调参**。
+左下角：**手感1 / 手感2**；右下角：**调参**（含震动 3 波、屏震、debris、发块）。
 
 ## 新会话建议
 
 1. 读本文件 + `docs/README.md`  
-2. 动手感读 `FEEL-DESIGN.md`；动发块读 `DEAL-DESIGN.md`  
+2. 动手感读 `FEEL-DESIGN.md`；动发块读 **`DEAL-PUSH-COMPLETE.md`**  
 3. `npm run dev` 或 `cap:sync` 真机  
 4. 默认手感槽 = **手感1**（= defaults）
 

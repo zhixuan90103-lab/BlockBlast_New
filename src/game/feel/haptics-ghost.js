@@ -68,8 +68,8 @@ export function createGhostHaptics(haptics, getTune) {
       });
     } else {
       void haptics.playTransient({
-        intensity: tune.FEEL_HAPTIC_GHOST_INTENSITY ?? 0.5,
-        sharpness: tune.FEEL_HAPTIC_GHOST_SHARPNESS ?? 0.3,
+        intensity: tune.FEEL_HAPTIC_GHOST_INTENSITY ?? 0.45,
+        sharpness: tune.FEEL_HAPTIC_GHOST_SHARPNESS ?? 0.25,
       });
     }
   }

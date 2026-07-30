@@ -264,8 +264,8 @@ export const FEEL_DRAG_FOLLOW_GAIN_MAX = FEEL_POINTER_GAIN_MAX;
 export const FEEL_BOARD_ENGAGE_OVERLAP = 0;
 
 /** 投影换格瞬态震动（普通挪格，无消）— 真机面板标定 */
-export const FEEL_HAPTIC_GHOST_INTENSITY = 0.5;
-export const FEEL_HAPTIC_GHOST_SHARPNESS = 0.3;
+export const FEEL_HAPTIC_GHOST_INTENSITY = 0.45;
+export const FEEL_HAPTIC_GHOST_SHARPNESS = 0.25;
 /** 投影到「将消」格 — 真机面板标定 */
 export const FEEL_HAPTIC_CLEAR_PREVIEW_INTENSITY = 0.7;
 export const FEEL_HAPTIC_CLEAR_PREVIEW_SHARPNESS = 0.3;
@@ -397,6 +397,8 @@ export const FEEL_INPUT_LOCK_MS = 150;
 export const FEEL_HIT_SLOP = 0.2;
 export const FEEL_PICKUP_SCALE_MS = 100;
 export const FEEL_REFILL_STAGGER_MS = 40;
+/** 死亡演出：开场全屏闪红总时长（ms，内含两次柔和淡入淡出） */
+export const FEEL_DEATH_FLASH_MS = 600;
 /** 死亡演出：每一横排填满/揭开时长（ms，含淡入淡出） */
 export const FEEL_DEATH_ROW_MS = 72;
 /** 填满后 → 揭开前的停留（ms） */
