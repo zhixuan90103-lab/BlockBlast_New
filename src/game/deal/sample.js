@@ -13,13 +13,22 @@ import {
   findAnyPlacement,
   simulatePlace,
 } from './board-ops.js';
-import { traySnugScore } from './fit-score.js';
-import { trayClearFriendlyScore } from './board-neat.js';
+import { findBestPlacement, traySnugScore } from './fit-score.js';
+import {
+  trayClearFriendlyScore,
+  trayMessDelta,
+} from './board-neat.js';
 import { rankCavityMatches } from './cavity-match.js';
 import {
   DEAL_EARLY_CLEAR_GUIDE_MUL,
   DEAL_EARLY_NEAT_SHAPES,
   DEAL_FIT_TRAY_SCORE_MUL,
+  DEAL_NEAT_GUIDE_ALL_PHASES,
+  DEAL_NEAT_GUIDE_MUL_LATE,
+  DEAL_NEAT_GUIDE_MUL_MID,
+  DEAL_NEAT_MAX_MESS_RISE,
+  DEAL_NEAT_SIM_BEST_PLACE,
+  DEAL_ORDER_GUARANTEE,
 } from '../defaults.js';
 import { getTune } from '../tune.js';
 import {
@@ -202,8 +211,11 @@ export function buildSizedFitTray(board, phase, opts = {}) {
     pieces.push(makePiece(form));
 
     if (simulate) {
-      // 快路径：任意可放点推进（bestFit 全盘扫太慢，会造成 tray 刷新顿一下）
-      const pos = findAnyPlacement(sim, form.matrix);
+      // 整齐模拟：用贴合最佳落点推进（比任意点更接近玩家优放）
+      const useBest = flagNeatSim();
+      const pos = useBest
+        ? findBestPlacement(sim, form.matrix) || findAnyPlacement(sim, form.matrix)
+        : findAnyPlacement(sim, form.matrix);
       if (!pos) return null;
       sim = simulatePlace(sim, form.matrix, pos.r, pos.c);
     }
@@ -233,10 +245,51 @@ export function buildSizedFitTray(board, phase, opts = {}) {
     }
   }
 
-  if (!existsPlacementOrder(board, pieces)) return null;
+  // 默认 G2：不强制全序；ORDER 开时才 G3
+  if (orderGuaranteeOn()) {
+    if (!existsPlacementOrder(board, pieces)) return null;
+  } else if (countInstantFits(board, pieces) < 1) {
+    return null;
+  }
   if (!acceptSizeMix(pieces, fill, phase, { allowMicro })) return null;
   if (!acceptShapeDiversity(pieces)) return null;
   return { pieces, plan: sizePlan, shapePlan };
+}
+
+function flagNeatSim(t = getTune()) {
+  const v = t.DEAL_NEAT_SIM_BEST_PLACE;
+  if (typeof v === 'number') return v >= 0.5;
+  if (typeof v === 'boolean') return v;
+  return DEAL_NEAT_SIM_BEST_PLACE;
+}
+
+function orderGuaranteeOn(t = getTune()) {
+  const v = t.DEAL_ORDER_GUARANTEE;
+  if (typeof v === 'number') return v >= 0.5;
+  if (typeof v === 'boolean') return v;
+  return DEAL_ORDER_GUARANTEE;
+}
+
+function neatGuideMul(phase, t = getTune()) {
+  const all =
+    typeof t.DEAL_NEAT_GUIDE_ALL_PHASES === 'number'
+      ? t.DEAL_NEAT_GUIDE_ALL_PHASES >= 0.5
+      : t.DEAL_NEAT_GUIDE_ALL_PHASES !== false && DEAL_NEAT_GUIDE_ALL_PHASES;
+  if (!all && phase !== 'early') return 0;
+  const earlyG = Number.isFinite(t.DEAL_EARLY_CLEAR_GUIDE_MUL)
+    ? Number(t.DEAL_EARLY_CLEAR_GUIDE_MUL)
+    : DEAL_EARLY_CLEAR_GUIDE_MUL;
+  if (phase === 'early') return Math.max(0.35, earlyG);
+  if (phase === 'mid') {
+    const m = Number.isFinite(t.DEAL_NEAT_GUIDE_MUL_MID)
+      ? Number(t.DEAL_NEAT_GUIDE_MUL_MID)
+      : DEAL_NEAT_GUIDE_MUL_MID;
+    return earlyG * m;
+  }
+  const l = Number.isFinite(t.DEAL_NEAT_GUIDE_MUL_LATE)
+    ? Number(t.DEAL_NEAT_GUIDE_MUL_LATE)
+    : DEAL_NEAT_GUIDE_MUL_LATE;
+  return earlyG * l;
 }
 
 /**
@@ -322,11 +375,13 @@ export function collectAndPickTray(board, phase, opts) {
       ? t.DEAL_EARLY_NEAT_SHAPES >= 0.5
       : t.DEAL_EARLY_NEAT_SHAPES !== false) &&
     DEAL_EARLY_NEAT_SHAPES;
+  const guideMul = neatGuideMul(phase, t);
+  const neatOn = guideMul > 0.01 && fill > 0.04;
 
   // 空腔表只算一次（旧逻辑在循环内反复扫盘 → 明显延迟）
   let cavKeys = null;
-  if (neatEarly && fill > 0.05) {
-    const cav = rankCavityMatches(board, { minScore: 20, limit: 8 });
+  if ((neatEarly || neatOn) && fill > 0.05) {
+    const cav = rankCavityMatches(board, { minScore: 18, limit: 10 });
     cavKeys = new Set(
       cav.map((m) => m.form.matrix.map((row) => row.join('')).join('/')),
     );
@@ -362,56 +417,65 @@ export function collectAndPickTray(board, phase, opts) {
     if (isOpenBoard(fill) && Math.max(...cells) >= 6) score += 3;
     const classes = pieces.map((p) => shapeClassOf(p));
     if (classes.includes('bar_h') && classes.includes('bar_v')) score += 2;
-    if (neatEarly) {
-      // 多样：有 rect/bar + 有 corner/tee 略加分；三块全角不奖
-      const hasRectOrBar = classes.some(
-        (c) => c === 'rect' || c === 'bar_h' || c === 'bar_v',
-      );
-      const hasCornerOrTee = classes.some(
-        (c) => c === 'corner' || c === 'tee',
-      );
-      if (hasRectOrBar) score += 2;
-      if (hasRectOrBar && hasCornerOrTee) score += 3;
-      // 仍重罚 Z / 5 直
+    // 整齐堆叠友好：矩形/条优先于纯异形
+    const hasRectOrBar = classes.some(
+      (c) => c === 'rect' || c === 'bar_h' || c === 'bar_v',
+    );
+    const hasCornerOrTee = classes.some(
+      (c) => c === 'corner' || c === 'tee',
+    );
+    if (hasRectOrBar) score += neatOn ? 3.5 : 1.5;
+    if (hasRectOrBar && hasCornerOrTee) score += neatOn ? 2.5 : 1;
+    if (!hasRectOrBar && hasCornerOrTee) score -= neatOn ? 1.5 : 0;
+    for (const p of pieces) {
+      const fam = p.family ?? -1;
+      if (fam === 11 || fam === 5) score -= neatOn ? 10 : 4;
+      if (fam === 10 && fill < 0.45) score -= 1.5;
+    }
+    if (cavKeys) {
       for (const p of pieces) {
-        const fam = p.family ?? -1;
-        if (fam === 11 || fam === 5) score -= 12;
-        if (fam === 10) score -= 1.2;
+        const k = p.matrix.map((row) => row.join('')).join('/');
+        if (cavKeys.has(k)) score += 9;
       }
-      if (cavKeys) {
-        for (const p of pieces) {
-          const k = p.matrix.map((row) => row.join('')).join('/');
-          if (cavKeys.has(k)) score += 8;
-        }
-      }
-    } else if (classes.includes('corner') || classes.includes('tee')) {
-      score += 1;
     }
 
     pool.push({ pieces, score });
-    if (pool.length >= 10) break;
+    if (pool.length >= 12) break;
   }
 
   if (!pool.length) return null;
 
-  // 仅对入围 tray 做一次较重 snug（最多 4 个），兼顾手感与帧时间
+  // 入围 tray 做 snug + 整齐度精修
   const snugMul = Number.isFinite(t.DEAL_FIT_TRAY_SCORE_MUL)
     ? Number(t.DEAL_FIT_TRAY_SCORE_MUL)
     : DEAL_FIT_TRAY_SCORE_MUL;
-  const guideMul = Number.isFinite(t.DEAL_EARLY_CLEAR_GUIDE_MUL)
-    ? Number(t.DEAL_EARLY_CLEAR_GUIDE_MUL)
-    : DEAL_EARLY_CLEAR_GUIDE_MUL;
+  const maxMessRise = Number.isFinite(t.DEAL_NEAT_MAX_MESS_RISE)
+    ? Number(t.DEAL_NEAT_MAX_MESS_RISE)
+    : DEAL_NEAT_MAX_MESS_RISE;
 
   pool.sort((a, b) => b.score - a.score);
-  const refine = pool.slice(0, Math.min(4, pool.length));
+  const refine = pool.slice(0, Math.min(6, pool.length));
+  /** @type {{ pieces: import('../forms.js').PieceDef[], score: number }[]} */
+  const kept = [];
   for (const item of refine) {
-    item.score += traySnugScore(board, item.pieces) * snugMul * 0.65;
-    if (neatEarly && fill > 0.05) {
-      item.score += trayClearFriendlyScore(board, item.pieces) * guideMul * 0.5;
+    item.score += traySnugScore(board, item.pieces) * snugMul * 0.85;
+    if (neatOn) {
+      const neatS = trayClearFriendlyScore(board, item.pieces);
+      item.score += neatS * guideMul * 0.85;
+      if (maxMessRise > 0 && fill > 0.08) {
+        const dMess = trayMessDelta(board, item.pieces);
+        if (dMess > maxMessRise) {
+          // 优放后明显变乱 → 丢弃（原版少给「越堆越碎」的块组）
+          continue;
+        }
+        item.score -= Math.max(0, dMess) * 4;
+      }
     }
+    kept.push(item);
   }
-  refine.sort((a, b) => b.score - a.score);
-  const top = refine.slice(0, Math.min(3, refine.length));
+  const finalPool = kept.length ? kept : refine;
+  finalPool.sort((a, b) => b.score - a.score);
+  const top = finalPool.slice(0, Math.min(3, finalPool.length));
   return top[Math.floor(rng() * top.length)].pieces;
 }
 

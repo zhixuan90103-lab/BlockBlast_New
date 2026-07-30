@@ -74,10 +74,19 @@ function boardSparseClearable() {
   return c;
 }
 
-function runScenario(name, boardFactory) {
+/** 场景默认分数：阶段按分数划分后，与盘面场景对齐体感 */
+const SCORE_BY_SCENARIO = {
+  empty: 0,
+  half: 1500,
+  late: 5000,
+  sparse: 200,
+};
+
+function runScenario(name, boardFactory, score = 0) {
   resetDealState();
   const modes = {};
   const phases = {};
+  const boardClasses = {};
   let micro = 0;
   let tiny3 = 0; // cells <= 3
   let totalPieces = 0;
@@ -91,11 +100,13 @@ function runScenario(name, boardFactory) {
   for (let i = 0; i < N; i++) {
     const cells = boardFactory();
     const grid = makeGrid(cells);
-    const tray = generateTray(grid);
+    const tray = generateTray(grid, { score });
     const meta = lastDealMeta;
 
     modes[meta.mode] = (modes[meta.mode] || 0) + 1;
     phases[meta.phase] = (phases[meta.phase] || 0) + 1;
+    const bc = meta.boardClass || '?';
+    boardClasses[bc] = (boardClasses[bc] || 0) + 1;
     sumInstant += meta.instant ?? countInstantFits(cells, tray);
 
     const av =
@@ -131,6 +142,7 @@ function runScenario(name, boardFactory) {
     N,
     modes,
     phases,
+    boardClasses,
     microRate,
     tiny3Rate,
     avgCells,
@@ -168,12 +180,13 @@ function checkGates(r) {
 }
 
 function printReport(r) {
-  console.log(`\n=== ${r.name} (n=${r.N}) ===`);
+  console.log(`\n=== ${r.name} (n=${r.N}) score=${SCORE_BY_SCENARIO[r.name] ?? 0} ===`);
   console.log(
     `avgCells=${r.avgCells.toFixed(2)}  micro≤2=${(r.microRate * 100).toFixed(1)}%  ≤3=${(r.tiny3Rate * 100).toFixed(1)}%  avgInstant=${r.avgInstant.toFixed(2)}  clear/assist=${(r.assistRate * 100).toFixed(0)}%`,
   );
   console.log('modes:', fmtHist(r.modes));
   console.log('phases:', fmtHist(r.phases));
+  console.log('boardClass:', fmtHist(r.boardClasses));
   console.log('cells:', fmtHist(r.cellHist));
   console.log('roles:', fmtHist(r.roleHist));
   console.log('class:', fmtHist(r.classHist));
@@ -197,7 +210,7 @@ console.log(`deal-histogram · N=${N} per scenario`);
 /** @type {string[]} */
 let allFails = [];
 for (const s of scenarios) {
-  const r = runScenario(s.name, s.fn);
+  const r = runScenario(s.name, s.fn, SCORE_BY_SCENARIO[s.name] ?? 0);
   printReport(r);
   const fails = checkGates(r);
   if (fails.length) {

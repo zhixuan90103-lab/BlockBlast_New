@@ -145,7 +145,7 @@ export function createGame(opts) {
   }
 
   function fillTray() {
-    const next = generateTray(grid);
+    const next = generateTray(grid, { score: scoreState.score });
     tray = next.slice(0, 3);
     while (tray.length < 3) tray.push(null);
   }
@@ -781,7 +781,8 @@ export function createGame(opts) {
         `platform: ${Capacitor.getPlatform()} | haptics: ${haptics.isNativeIos() ? 'ios' : 'off'}\n` +
         `frame: ${Math.round(size.width)}×${Math.round(size.height)} · cell ${layout.cell.toFixed(1)}\n` +
         `deal: ${lastDealMeta.phase} (base ${lastDealMeta.basePhase}) ` +
-        `fill ${(lastDealMeta.fill * 100).toFixed(0)}% instant ${lastDealMeta.instant} ` +
+        `score ${lastDealMeta.score ?? 0} fill ${(lastDealMeta.fill * 100).toFixed(0)}% ` +
+        `instant ${lastDealMeta.instant} ` +
         `${lastDealMeta.mode} #${lastDealMeta.attempts}` +
         (lastDealMeta.clearPlanLen != null
           ? ` clear≤${lastDealMeta.clearPlanLen}`

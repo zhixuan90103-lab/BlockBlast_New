@@ -17,18 +17,48 @@ export const SCORE_PER_CELL = 1;
 export const SCORE_LINE_BASE = 10;
 export const SCORE_ALL_CLEAR = 300;
 
+/**
+ * 启用可放相关验收（instant 窗 + 可选 G3）。
+ * 关闭则退回纯权重抽样（simple）。
+ */
 export const FIT_GUARANTEE = true;
+/**
+ * G3：存在放置顺序使三块均可放下（中间可消线）。
+ * 默认 false → 主路径以 G2（各自 instant）为主，对齐截图推断；
+ * true 时 acceptMain 额外要求 existsPlacementOrder。
+ */
+export const DEAL_ORDER_GUARANTEE = false;
+/**
+ * 按局面 class（healthy/setup/fragmented/choke）门控全清/payoff/cavity。
+ */
+export const DEAL_BOARD_STATE_GATE = true;
+/**
+ * 续推清屏中若盘已 healthy 且 fill 不高，取消 pending（防无限奶）。
+ */
+export const DEAL_CLEAR_CANCEL_ON_HEALTHY = true;
 
 // —— 发块推送 DEAL_*（阶段难度 + 呼吸）——
 /**
- * 启用后：按盘面填充率切 early/mid/late，
+ * 启用后：按 **当前分数** 切 early/mid/late，
  * 约束 instantFit 个数，权重偏置，后期可回跳前/中期放松。
  * 关闭则退回「权重 + 可放保证」旧逻辑。
+ * 局面门控 / 助清 fill 上限等仍看盘面，与阶段正交。
  */
 export const DEAL_PHASE_ENABLED = true;
-/** 填充率 [0,1) < 此值 → 基础阶段 early（大块+清屏主路径） */
+/**
+ * 阶段划分（分数，左闭右开语义）：
+ *   score < DEAL_SCORE_EARLY_MAX  → early
+ *   score < DEAL_SCORE_MID_MAX    → mid
+ *   否则                          → late
+ */
+export const DEAL_SCORE_EARLY_MAX = 1000;
+export const DEAL_SCORE_MID_MAX = 4000;
+/**
+ * 兼容旧键：填充率阈值不再驱动 phase（保留供 tune 面板/文档对照）。
+ * @deprecated phase 已改分数；勿再当作阶段依据
+ */
 export const DEAL_FILL_EARLY_MAX = 0.34;
-/** 填充率 < 此值 → mid（空位+碎块），否则 late */
+/** @deprecated 见 DEAL_SCORE_* */
 export const DEAL_FILL_MID_MAX = 0.58;
 /**
  * 后期呼吸：先 roll early，否则 mid，否则 late。
@@ -82,12 +112,12 @@ export const DEAL_EARLY_CLEAR_MAX_NODES = 1200;
  * - mid：少量大消 + 少量清屏（加压）
  * - late：压力为主，清屏更稀
  */
-/** early 概率全清 — 偶尔 */
-export const DEAL_EARLY_CLEAR_CHANCE = 0.2;
+/** early 概率全清 — 偶尔（局面门控后再乘系数） */
+export const DEAL_EARLY_CLEAR_CHANCE = 0.14;
 /** mid 清屏更稀 */
-export const DEAL_MID_CLEAR_CHANCE = 0.06;
+export const DEAL_MID_CLEAR_CHANCE = 0.04;
 /** late 清屏最稀 */
-export const DEAL_LATE_CLEAR_CHANCE = 0.05;
+export const DEAL_LATE_CLEAR_CHANCE = 0.03;
 /**
  * early 助清/全清 beat 更勤；mid/late 用更大间隔（pipeline 按阶段读）。
  */
@@ -118,8 +148,8 @@ export const DEAL_CAVITY_GUIDE_CHANCE_MID = 0.08;
 /**
  * Setup 大消 payoff：early 高（大范围消除），mid 低（少量）。
  */
-export const DEAL_PAYOFF_CHANCE = 0.22;
-export const DEAL_PAYOFF_CHANCE_EARLY = 0.36;
+export const DEAL_PAYOFF_CHANCE = 0.2;
+export const DEAL_PAYOFF_CHANCE_EARLY = 0.3;
 export const DEAL_PAYOFF_CHANCE_MID = 0.14;
 export const DEAL_PAYOFF_CHANCE_LATE = 0.1;
 /** payoff 至少造成几条线（行+列合计）才算钥匙 */
@@ -135,6 +165,21 @@ export const DEAL_CLEAR_OFFER_RETRY_MAX = 6;
 export const DEAL_EARLY_NEAT_SHAPES = true;
 /** early 清屏友好分在 tray 优选中的权重（普通采样内） */
 export const DEAL_EARLY_CLEAR_GUIDE_MUL = 0.35;
+/**
+ * 全阶段「整齐盘」引导：优选取优落点后 mess 不升、空洞减少的 tray。
+ * 对齐原版「盘可满但结构整齐」。
+ */
+export const DEAL_NEAT_GUIDE_ALL_PHASES = true;
+/** mid / late 整齐分倍率（相对 early guide） */
+export const DEAL_NEAT_GUIDE_MUL_MID = 0.55;
+export const DEAL_NEAT_GUIDE_MUL_LATE = 0.42;
+/**
+ * 入围 tray 若「优序放置后 mess 明显变差」则丢弃（0=关闭）。
+ * 正数：允许 mess 增加的上限（boardMess 单位）。
+ */
+export const DEAL_NEAT_MAX_MESS_RISE = 2.8;
+/** 采样模拟推进时用贴合最佳落点（而非任意点），略贵但更整齐 */
+export const DEAL_NEAT_SIM_BEST_PLACE = true;
 /**
  * 禁止常规推送 ≤2 格块（2 直 / 1×1）；仅高填充 clutch 小概率放开。
  */
@@ -171,9 +216,9 @@ export const DEAL_ROLE_LATE_RARE = 0.07;
  */
 export const DEAL_FIT_SCORE_ENABLED = true;
 /** 贴合分对抽样权重的增益尺度（越大越偏严丝合缝） */
-export const DEAL_FIT_WEIGHT = 2.8;
+export const DEAL_FIT_WEIGHT = 3.4;
 /** tray 候选池里 snug 分的权重 */
-export const DEAL_FIT_TRAY_SCORE_MUL = 0.45;
+export const DEAL_FIT_TRAY_SCORE_MUL = 0.72;
 
 // —— 手感 FEEL_* ——
 /**

@@ -70,11 +70,12 @@ export function sessionOnEmit(mode, wasAssistBeat, streakMax) {
 }
 
 /**
- * 生成前：盘空清续推；超限放弃
+ * 生成前：盘空清续推；超限放弃；可选 healthy 取消 pending
  * @param {number} fill
  * @param {number} clearRetryMax
+ * @param {{ cancelOnHealthy?: boolean, boardClass?: string }} [opts]
  */
-export function sessionBeforeDeal(fill, clearRetryMax) {
+export function sessionBeforeDeal(fill, clearRetryMax, opts = {}) {
   if (fill < 0.005) {
     dealSession.clearOfferPending = false;
     dealSession.clearOfferRounds = 0;
@@ -83,6 +84,19 @@ export function sessionBeforeDeal(fill, clearRetryMax) {
   if (
     dealSession.clearOfferPending &&
     dealSession.clearOfferRounds >= clearRetryMax
+  ) {
+    dealSession.clearOfferPending = false;
+    dealSession.clearOfferRounds = 0;
+    return;
+  }
+  // 盘已回到健康压盘且不太满：停止无限清屏续推
+  if (
+    opts.cancelOnHealthy &&
+    dealSession.clearOfferPending &&
+    opts.boardClass === 'healthy' &&
+    fill > 0.08 &&
+    fill < 0.42 &&
+    dealSession.clearOfferRounds >= 2
   ) {
     dealSession.clearOfferPending = false;
     dealSession.clearOfferRounds = 0;

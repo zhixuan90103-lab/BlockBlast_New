@@ -39,9 +39,10 @@ import { familyMulForPhase } from './phase.js';
  * @param {import('./phase.js').DealPhase} phase
  * @param {number} fill
  * @param {() => number} [rng]
+ * @param {{ chance?: number }} [opts] chance 由 policy 局面门控后传入
  * @returns {import('../forms.js').PieceDef[] | null}
  */
-export function tryClearTrayForBoard(board, phase, fill, rng = Math.random) {
+export function tryClearTrayForBoard(board, phase, fill, rng = Math.random, opts = {}) {
   const t = getTune();
   const enabled = flag(t.DEAL_EARLY_CLEAR_ENABLED, DEAL_EARLY_CLEAR_ENABLED);
   if (!enabled) return null;
@@ -53,8 +54,8 @@ export function tryClearTrayForBoard(board, phase, fill, rng = Math.random) {
     t.DEAL_CLEAR_FINISHER_FILL_MAX,
     DEAL_CLEAR_FINISHER_FILL_MAX,
   );
-  // 概率全清（默认偏低=偶尔）；收官略抬一点
-  const chance =
+  // 概率全清（默认偏低=偶尔）；收官略抬一点；policy 可覆盖
+  let chance =
     fill <= finisherMax
       ? Math.min(
           0.45,
@@ -65,6 +66,12 @@ export function tryClearTrayForBoard(board, phase, fill, rng = Math.random) {
         : phase === 'mid'
           ? num(t.DEAL_MID_CLEAR_CHANCE, DEAL_MID_CLEAR_CHANCE)
           : num(t.DEAL_LATE_CLEAR_CHANCE, DEAL_LATE_CLEAR_CHANCE);
+  if (Number.isFinite(opts.chance)) {
+    chance =
+      fill <= finisherMax
+        ? Math.min(0.5, Math.max(opts.chance, opts.chance + 0.08))
+        : opts.chance;
+  }
   if (rng() >= chance) return null;
 
   const nodes = num(t.DEAL_EARLY_CLEAR_MAX_NODES, DEAL_EARLY_CLEAR_MAX_NODES);

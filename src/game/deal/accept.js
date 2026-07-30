@@ -5,6 +5,7 @@
 import {
   DEAL_CLEAR_FINISHER_FILL_MAX,
   DEAL_EARLY_MIN_AVG_CELLS,
+  DEAL_ORDER_GUARANTEE,
   TRAY_SIZE,
 } from '../defaults.js';
 import { countCells } from '../forms.js';
@@ -19,6 +20,25 @@ import { acceptSizeMix } from './size-rhythm.js';
 
 function num(v, fb) {
   return Number.isFinite(v) ? Number(v) : fb;
+}
+
+function flag(v, fb) {
+  if (typeof v === 'number') return v >= 0.5;
+  if (typeof v === 'boolean') return v;
+  return !!fb;
+}
+
+/** 是否强制 G3 全序可解 */
+export function orderGuaranteeOn(t = getTune()) {
+  return flag(t.DEAL_ORDER_GUARANTEE, DEAL_ORDER_GUARANTEE);
+}
+
+/** 主路径：G3 仅开关开启时要求；特殊 tray 仍可要求有序解 */
+export function requireOrderIfNeeded(board, pieces, force = false) {
+  if (force || orderGuaranteeOn()) {
+    return existsPlacementOrder(board, pieces);
+  }
+  return true;
 }
 
 function avgCells(pieces) {
@@ -41,7 +61,8 @@ export function acceptMainTray(board, pieces, phase, fill = 0, allowMicro = fals
   const { min, max } = instantRangeForPhase(phase, t);
   const instant = countInstantFits(board, pieces);
   if (instant < min || instant > max) return false;
-  if (!existsPlacementOrder(board, pieces)) return false;
+  // 默认 G2：instant 窗已约束「各自可放」数量；G3 仅 DEAL_ORDER_GUARANTEE
+  if (!requireOrderIfNeeded(board, pieces, false)) return false;
   if (!acceptSizeMix(pieces, fill, phase, { allowMicro })) return false;
   if (!acceptShapeDiversity(pieces)) return false;
 
@@ -60,6 +81,7 @@ export function acceptMainTray(board, pieces, phase, fill = 0, allowMicro = fals
  */
 export function acceptSpecialTray(board, pieces, fill = 0, kind = 'assist') {
   if (!pieces?.length || pieces.length < TRAY_SIZE) return false;
+  // 全清/助清必须有序可解，否则「有解」承诺不成立
   if (!existsPlacementOrder(board, pieces)) return false;
 
   const cells = pieces.map((p) => countCells(p.matrix));
@@ -96,8 +118,9 @@ export function acceptSpecialTray(board, pieces, fill = 0, kind = 'assist') {
  */
 export function acceptPayoffTray(board, pieces) {
   if (!pieces?.length || pieces.length < TRAY_SIZE) return false;
-  if (!existsPlacementOrder(board, pieces)) return false;
-  if (countInstantFits(board, pieces) < 1) return false;
+  // 钥匙块至少各自可放够用；有序解在开关开时强制
+  if (countInstantFits(board, pieces) < 2) return false;
+  if (!requireOrderIfNeeded(board, pieces, false)) return false;
   if (pieces.some((p) => countCells(p.matrix) <= 2)) return false;
   return true;
 }

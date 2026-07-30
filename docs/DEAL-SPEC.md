@@ -1,9 +1,10 @@
 # 发块推送 · 现行行为（重构后）
 
-**状态：** v2 · 2026-07-30  
+**状态：** v3 · 2026-07-30（局面门控 + 默认 G2）  
 **入口：** `deal/pipeline.js` → `generateTray`  
 **数值：** `defaults.js`  
-**需求 SSOT：** [DEAL-REFACTOR-DESIGN.md](./DEAL-REFACTOR-DESIGN.md) · 玩家清屏/大消调研 [research/CLEAR-PLAYER-RESEARCH.md](../../research/CLEAR-PLAYER-RESEARCH.md)
+**完整规格 SSOT：** [DEAL-PUSH-COMPLETE.md](./DEAL-PUSH-COMPLETE.md)  
+**重构设计：** [DEAL-REFACTOR-DESIGN.md](./DEAL-REFACTOR-DESIGN.md) · 调研 [research/CLEAR-PLAYER-RESEARCH.md](../../research/CLEAR-PLAYER-RESEARCH.md)
 
 ---
 
@@ -14,6 +15,8 @@
 | **清屏** | 结算后整盘全空（All Clear） |
 | **大消 payoff** | 一块落下多线同消（不必全空） |
 | **空腔补缺** | 按缺口推 L/T 等嵌洞 |
+| **G2** | 三块各自当前可放（主路径默认） |
+| **G3** | 存在放置顺序全可放（`DEAL_ORDER_GUARANTEE`，默认关） |
 
 ### 0.1 阶段推送手感（产品总结 · 冻结）
 
@@ -24,24 +27,29 @@
 | **后期 late** | 压力、可放收紧 | **更稀** | **更稀** |
 
 节奏目标：**前期好摆好消、偶发清空释放 → 中期收紧大消/清屏形成压力 → 后期高压**。  
-**不按分数**切阶段，按 **盘面填充率**。
+**按当前分数切阶段**（默认 `score < 1000` early / `< 4000` mid / else late + 呼吸回跳）。  
+盘面 fill / boardClass 仍用于助清、门控等，与阶段正交。
+
+### 0.2 局面 class（`board-state.js`）
+
+`empty | healthy | setup | fragmented | choke` → 门控全清/payoff/cavity；见 `lastDealMeta.boardClass`。
 
 ---
 
 ## 1. 管线意图顺序
 
 ```
-snapshot 当前盘
-  → 1 续推清屏（曾给清屏向且未盘空，最多 N 次）
-  → 2 beat（约每 4 tray）：真全清 → 否则助清减盘
-  → 3 偶发 payoff-multi（T6 钥匙大消）
-  → 4 偶发 cavity-guide
-  → 5 稀有阶段全清
-  → 6 主采样（整齐 + T/L 基础形状）
+snapshot 当前盘 → classifyBoardState
+  → 1 续推清屏（最多 N 次；healthy 可取消 pending）
+  → 2 beat：真全清（仅 healthy/setup/empty）→ 否则助清
+  → 3 偶发 payoff-multi（需 setup 特征）
+  → 4 偶发 cavity-guide（碎片优先）
+  → 5 稀有阶段全清 × 局面系数
+  → 6 主采样（默认 G2 instant 窗）
   → 7 fallback
 ```
 
-**不看分数。** 与「高压后释放 / 自建 setup 兑现」对齐，见调研文档。
+**不看分数。**
 
 ---
 

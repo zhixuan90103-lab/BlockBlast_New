@@ -13,6 +13,8 @@
 export {
   anyTrayPieceFits,
   basePhaseFromFill,
+  basePhaseFromScore,
+  classifyBoardState,
   clearPendingDealPlan,
   countInstantFits,
   existsPlacementOrder,
@@ -25,3 +27,8 @@ export {
 export { ROLE_FAMILIES, roleMixForPhase, roleOfFamily, rollRole } from './bag.js';
 export { boardHasPayoffSetup, rankPayoffForms } from './payoff-match.js';
 export { getDealPolicy } from './policy.js';
+export {
+  allowsFullClearSearch,
+  allowsPayoffIntent,
+  maxEmptyRect,
+} from './board-state.js';

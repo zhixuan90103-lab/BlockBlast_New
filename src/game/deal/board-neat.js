@@ -10,53 +10,72 @@ import { fitsOn, findPlacements, simulatePlace } from './board-ops.js';
 import { countFilled } from './board-ops.js';
 
 /**
- * 盘面「乱」的程度：越高越难清屏
+ * 盘面「乱」的程度：越高越碎、越难整洁堆叠（不要求能清屏）
  * @param {(number|null)[][]} cells
  */
 export function boardMessScore(cells) {
   let holes = 0;
   let edgeJags = 0;
   let partialLines = 0;
+  let singleGaps = 0;
 
   for (let r = 0; r < GRID; r++) {
     let filled = 0;
     let runEmpty = 0;
     let maxEmptyRun = 0;
+    let emptyRuns = 0;
+    let inEmpty = false;
     for (let c = 0; c < GRID; c++) {
       if (cells[r][c] != null) {
         filled += 1;
         maxEmptyRun = Math.max(maxEmptyRun, runEmpty);
+        if (inEmpty) {
+          emptyRuns += 1;
+          inEmpty = false;
+        }
         runEmpty = 0;
       } else {
         runEmpty += 1;
+        if (!inEmpty) inEmpty = true;
       }
     }
     maxEmptyRun = Math.max(maxEmptyRun, runEmpty);
+    if (inEmpty) emptyRuns += 1;
     if (filled > 0 && filled < GRID) {
       partialLines += 1;
       // 一行里多段空洞 = 锯齿
-      if (maxEmptyRun < GRID - filled) edgeJags += 1.5;
-      else edgeJags += 0.4;
+      if (emptyRuns >= 2 || maxEmptyRun < GRID - filled) edgeJags += 1.8;
+      else edgeJags += 0.35;
+      if (GRID - filled === 1) singleGaps += 0.4;
     }
   }
   for (let c = 0; c < GRID; c++) {
     let filled = 0;
     let runEmpty = 0;
     let maxEmptyRun = 0;
+    let emptyRuns = 0;
+    let inEmpty = false;
     for (let r = 0; r < GRID; r++) {
       if (cells[r][c] != null) {
         filled += 1;
         maxEmptyRun = Math.max(maxEmptyRun, runEmpty);
+        if (inEmpty) {
+          emptyRuns += 1;
+          inEmpty = false;
+        }
         runEmpty = 0;
       } else {
         runEmpty += 1;
+        if (!inEmpty) inEmpty = true;
       }
     }
     maxEmptyRun = Math.max(maxEmptyRun, runEmpty);
+    if (inEmpty) emptyRuns += 1;
     if (filled > 0 && filled < GRID) {
       partialLines += 1;
-      if (maxEmptyRun < GRID - filled) edgeJags += 1.5;
-      else edgeJags += 0.4;
+      if (emptyRuns >= 2 || maxEmptyRun < GRID - filled) edgeJags += 1.8;
+      else edgeJags += 0.35;
+      if (GRID - filled === 1) singleGaps += 0.4;
     }
   }
 
@@ -70,10 +89,61 @@ export function boardMessScore(cells) {
       if (cells[r][c - 1] != null) n += 1;
       if (cells[r][c + 1] != null) n += 1;
       if (n >= 3) holes += 1;
+      if (n === 4) holes += 0.5;
     }
   }
 
-  return holes * 3.2 + edgeJags * 1.1 + partialLines * 0.35;
+  // 空区碎片：连通分量多 = 麻子盘
+  const { components, singles } = emptyFragmentStats(cells);
+  const frag =
+    singles * 2.4 + Math.max(0, components - 2) * 1.35 + Math.max(0, components - 4) * 0.8;
+
+  return (
+    holes * 3.6 +
+    edgeJags * 1.25 +
+    partialLines * 0.28 +
+    singleGaps * 0.5 +
+    frag
+  );
+}
+
+/**
+ * 空格 4-连通：分量数 + 单格洞
+ * @param {(number|null)[][]} cells
+ */
+function emptyFragmentStats(cells) {
+  const seen = Array.from({ length: GRID }, () => Array(GRID).fill(false));
+  let components = 0;
+  let singles = 0;
+  const dirs = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ];
+  for (let r = 0; r < GRID; r++) {
+    for (let c = 0; c < GRID; c++) {
+      if (cells[r][c] != null || seen[r][c]) continue;
+      components += 1;
+      let size = 0;
+      const q = [[r, c]];
+      seen[r][c] = true;
+      while (q.length) {
+        const [cr, cc] = q.pop();
+        size += 1;
+        for (const [dr, dc] of dirs) {
+          const nr = cr + dr;
+          const nc = cc + dc;
+          if (nr < 0 || nr >= GRID || nc < 0 || nc >= GRID) continue;
+          if (seen[nr][nc] || cells[nr][nc] != null) continue;
+          seen[nr][nc] = true;
+          q.push([nr, nc]);
+        }
+      }
+      if (size === 1) singles += 1;
+    }
+  }
+  return { components, singles };
 }
 
 /**
@@ -135,7 +205,17 @@ export function scoreClearFriendlyPlacement(cells, matrix, originRow, originCol)
   if (filledAfter === 0) return 200 + cleared;
 
   const tidy = messBefore - messAfter;
-  return cleared * 6 + nearFull + tidy * 4.5 - messAfter * 0.35;
+  // 原版体感：即使不消线，也要「贴整齐、不挖碎洞」
+  // 无消线时抬高 tidy 权重；造 mess 重罚
+  const tidyWeight = cleared > 0 ? 5.2 : 8.5;
+  const messPenalty = messAfter * (cleared > 0 ? 0.4 : 0.75);
+  // 填实后占用上升但 mess 下降 = 健康堆叠
+  const solidPack =
+    filledAfter > filledBefore && tidy > 0
+      ? tidy * 2.2 + Math.min(6, filledAfter - filledBefore) * 0.35
+      : 0;
+
+  return cleared * 5.5 + nearFull + tidy * tidyWeight + solidPack - messPenalty;
 }
 
 /**
@@ -209,6 +289,7 @@ export function weightWithClearFriendly(board, form, baseW) {
  */
 export function trayClearFriendlyScore(board, pieces) {
   if (!pieces?.length) return 0;
+  const mess0 = boardMessScore(board);
   let sim = board.map((row) => row.slice());
   let rem = pieces.filter(Boolean);
   let total = 0;
@@ -230,8 +311,40 @@ export function trayClearFriendlyScore(board, pieces) {
     sim = simulatePlace(sim, rem[bestI].matrix, bestPos.r, bestPos.c);
     rem = rem.slice(0, bestI).concat(rem.slice(bestI + 1));
   }
-  // 结束后仍乱则扣分
-  total -= boardMessScore(sim) * 2;
+  const mess1 = boardMessScore(sim);
+  // 整 tray 后 mess 变化：整齐堆叠核心指标
+  total += (mess0 - mess1) * 6.5;
+  total -= mess1 * 1.8;
   if (countFilled(sim) === 0) total += 80;
   return total;
+}
+
+/**
+ * 优序放置后 mess 增量（>0 变乱）
+ * @param {(number|null)[][]} board
+ * @param {{ matrix: number[][] }[]} pieces
+ */
+export function trayMessDelta(board, pieces) {
+  if (!pieces?.length) return 0;
+  const mess0 = boardMessScore(board);
+  let sim = board.map((row) => row.slice());
+  let rem = pieces.filter(Boolean);
+  while (rem.length) {
+    let bestI = -1;
+    let bestS = -Infinity;
+    let bestPos = null;
+    for (let i = 0; i < rem.length; i++) {
+      const b = bestClearFriendlyScore(sim, rem[i].matrix, 28);
+      if (!b) continue;
+      if (b.score > bestS) {
+        bestS = b.score;
+        bestI = i;
+        bestPos = b;
+      }
+    }
+    if (bestI < 0 || !bestPos) return 99;
+    sim = simulatePlace(sim, rem[bestI].matrix, bestPos.r, bestPos.c);
+    rem = rem.slice(0, bestI).concat(rem.slice(bestI + 1));
+  }
+  return boardMessScore(sim) - mess0;
 }

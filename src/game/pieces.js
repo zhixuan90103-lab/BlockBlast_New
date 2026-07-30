@@ -5,6 +5,7 @@
 export {
   anyTrayPieceFits,
   basePhaseFromFill,
+  basePhaseFromScore,
   clearPendingDealPlan,
   countInstantFits,
   existsPlacementOrder,

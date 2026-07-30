@@ -6,6 +6,7 @@ import { GRID } from '../defaults.js';
 import { DEAL_FIT_SCORE_ENABLED, DEAL_FIT_WEIGHT } from '../defaults.js';
 import { matrixSize } from '../forms.js';
 import { getTune } from '../tune.js';
+import { boardMessScore } from './board-neat.js';
 import { fitsOn, findPlacements, simulatePlace } from './board-ops.js';
 
 const DIRS = [
@@ -103,11 +104,19 @@ export function scorePlacement(cells, matrix, originRow, originCol) {
 
   // 贴合主项：邻接 + 消线奖励 + 差一格 + 接触比
   let score =
-    contact * 1.15 +
-    lines * 28 +
-    almost * 7 +
-    contactRatio * 10 +
+    contact * 1.35 +
+    lines * 26 +
+    almost * 8 +
+    contactRatio * 12 +
     Math.min(pieceCells, 6) * 0.15;
+
+  // 整齐度：放后 mess 下降强奖（不消线也算）
+  const mess0 = boardMessScore(cells);
+  const next = simulatePlace(cells, matrix, originRow, originCol);
+  const mess1 = boardMessScore(next);
+  const tidy = mess0 - mess1;
+  score += tidy * (lines > 0 ? 4.5 : 7.2);
+  if (tidy < -0.5) score += tidy * 3.5; // 变乱额外罚
 
   // 空旷盘：略奖励伸展（别全贴边挤）；残盘：略奖励更贴
   const filled = rowFill.reduce((a, b) => a + b, 0);
@@ -115,7 +124,7 @@ export function scorePlacement(cells, matrix, originRow, originCol) {
   if (fill < 0.35) {
     score += lines * 4;
   } else if (fill > 0.5) {
-    score += contact * 0.35 + lines * 6;
+    score += contact * 0.55 + lines * 5 + Math.max(0, tidy) * 2;
   }
 
   return score;

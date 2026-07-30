@@ -6,6 +6,8 @@
 export {
   anyTrayPieceFits,
   basePhaseFromFill,
+  basePhaseFromScore,
+  classifyBoardState,
   clearPendingDealPlan,
   countInstantFits,
   existsPlacementOrder,

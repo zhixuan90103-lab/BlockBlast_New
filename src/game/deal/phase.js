@@ -1,6 +1,6 @@
 /**
  * 阶段：early / mid / late
- * - 由填充率定 base
+ * - 由 **当前分数** 定 base（非填充率）
  * - 再按概率「呼吸」回跳
  * - 各族权重倍率（α：对齐角色目标，压 early 3×3、降 mid 碎块过重）
  */
@@ -8,8 +8,6 @@ import {
   DEAL_EARLY_INSTANT_MAX,
   DEAL_EARLY_INSTANT_MIN,
   DEAL_EARLY_NEAT_MUL,
-  DEAL_FILL_EARLY_MAX,
-  DEAL_FILL_MID_MAX,
   DEAL_LATE_AWKWARD_MUL,
   DEAL_LATE_INSTANT_MAX,
   DEAL_LATE_INSTANT_MIN,
@@ -20,21 +18,33 @@ import {
   DEAL_MID_INSTANT_MIN,
   DEAL_MID_RELAX_EARLY,
   DEAL_MID_SCRAP_MUL,
+  DEAL_SCORE_EARLY_MAX,
+  DEAL_SCORE_MID_MAX,
 } from '../defaults.js';
 import { getTune } from '../tune.js';
 
 /** @typedef {'early' | 'mid' | 'late'} DealPhase */
 
 /**
- * @param {number} fill 0..1
+ * @param {number} score 当前局分数
  * @returns {DealPhase}
  */
-export function basePhaseFromFill(fill, t = getTune()) {
-  const earlyMax = num(t.DEAL_FILL_EARLY_MAX, DEAL_FILL_EARLY_MAX);
-  const midMax = num(t.DEAL_FILL_MID_MAX, DEAL_FILL_MID_MAX);
-  if (fill < earlyMax) return 'early';
-  if (fill < midMax) return 'mid';
+export function basePhaseFromScore(score, t = getTune()) {
+  const s = Number.isFinite(score) ? Math.max(0, score) : 0;
+  const earlyMax = num(t.DEAL_SCORE_EARLY_MAX, DEAL_SCORE_EARLY_MAX);
+  const midMax = num(t.DEAL_SCORE_MID_MAX, DEAL_SCORE_MID_MAX);
+  if (s < earlyMax) return 'early';
+  if (s < midMax) return 'mid';
   return 'late';
+}
+
+/**
+ * @deprecated 阶段已改分数；保留给旧调用，忽略 fill 恒 early（避免误用 fill 当阶段）
+ * @param {number} _fill
+ * @returns {DealPhase}
+ */
+export function basePhaseFromFill(_fill, t = getTune()) {
+  return basePhaseFromScore(0, t);
 }
 
 /**
@@ -115,32 +125,33 @@ export function familyMulForPhase(phase, t = getTune()) {
     mul[5] = 0.06; // Z
     mul[7] = 0.05; // 2 直
   } else if (phase === 'mid') {
-    // 中大块主粮；碎块/2直压低（偶发破局靠 clutch 放开）
-    mul[0] = 1.35;
-    mul[1] = 1.3;
-    mul[8] = 1.25;
-    mul[10] = 1.2;
-    mul[3] = 1.15;
-    mul[4] = scrap * 0.7;
-    mul[9] = scrap * 0.55;
-    mul[5] = scrap * 0.85;
-    mul[6] = scrap * 0.75;
-    mul[7] = 0.12; // 2 直：常规几乎不来
-    mul[2] = bigDamp * 1.05;
-    mul[11] = 0.85;
+    // 中大块主粮（矩形/条优先 → 易堆整齐）；碎块/Z 压低
+    mul[0] = 1.55;
+    mul[1] = 1.45;
+    mul[8] = 1.4;
+    mul[10] = 1.25;
+    mul[3] = 1.0;
+    mul[4] = scrap * 0.55;
+    mul[9] = scrap * 0.45;
+    mul[5] = scrap * 0.45;
+    mul[6] = scrap * 0.7;
+    mul[7] = 0.1;
+    mul[2] = bigDamp * 1.15;
+    mul[11] = 0.55;
   } else {
-    mul[5] = awkward * 1.2; // Z
-    mul[3] = awkward * 1.15; // 长 L
-    mul[11] = awkward * 1.15; // 5 直
-    mul[10] = awkward * 1.1;
-    mul[6] = awkward * 1.05;
-    mul[8] = 1.15;
-    mul[4] = awkward * 0.65;
-    mul[9] = awkward * 0.5;
-    mul[7] = 0.18; // 2 直仅残盘 clutch
-    mul[0] = 0.65;
-    mul[1] = 0.7;
-    mul[2] = 0.4;
+    // late 仍加压，但保留矩形/短条作「整齐堆高」底盘
+    mul[5] = awkward * 1.05; // Z 略降
+    mul[3] = awkward * 1.1;
+    mul[11] = awkward * 1.0;
+    mul[10] = awkward * 1.05;
+    mul[6] = awkward * 0.95;
+    mul[8] = 1.35;
+    mul[4] = awkward * 0.55;
+    mul[9] = awkward * 0.42;
+    mul[7] = 0.15;
+    mul[0] = 0.95;
+    mul[1] = 1.0;
+    mul[2] = 0.55;
   }
   return mul;
 }

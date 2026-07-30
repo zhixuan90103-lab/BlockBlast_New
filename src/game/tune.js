@@ -108,8 +108,10 @@ export function createDefaultTune() {
     /** 显示 tray 三等分区 */
     SHOW_TRAY_ZONES: D.SHOW_TRAY_ZONES,
 
-    // —— 发块阶段 ——
+    // —— 发块阶段（按分数）——
     DEAL_PHASE_ENABLED: D.DEAL_PHASE_ENABLED ? 1 : 0,
+    DEAL_SCORE_EARLY_MAX: D.DEAL_SCORE_EARLY_MAX,
+    DEAL_SCORE_MID_MAX: D.DEAL_SCORE_MID_MAX,
     DEAL_FILL_EARLY_MAX: D.DEAL_FILL_EARLY_MAX,
     DEAL_FILL_MID_MAX: D.DEAL_FILL_MID_MAX,
     DEAL_LATE_RELAX_EARLY: D.DEAL_LATE_RELAX_EARLY,
@@ -906,20 +908,20 @@ export const TUNE_FIELDS = [
         format: (v) => v.toFixed(2),
       },
       {
-        key: 'DEAL_FILL_EARLY_MAX',
-        label: '前期填充上限',
-        min: 0.15,
-        max: 0.45,
-        step: 0.01,
-        format: (v) => v.toFixed(2),
+        key: 'DEAL_SCORE_EARLY_MAX',
+        label: '前期分数上限(<此为early)',
+        min: 200,
+        max: 5000,
+        step: 50,
+        format: (v) => String(Math.round(v)),
       },
       {
-        key: 'DEAL_FILL_MID_MAX',
-        label: '中期填充上限',
-        min: 0.35,
-        max: 0.75,
-        step: 0.01,
-        format: (v) => v.toFixed(2),
+        key: 'DEAL_SCORE_MID_MAX',
+        label: '中期分数上限(<此为mid)',
+        min: 500,
+        max: 20000,
+        step: 100,
+        format: (v) => String(Math.round(v)),
       },
       {
         key: 'DEAL_LATE_RELAX_EARLY',
