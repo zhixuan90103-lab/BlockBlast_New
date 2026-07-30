@@ -4,7 +4,9 @@
  */
 import {
   DEAL_BAG_ENABLED,
+  DEAL_BAN_MICRO,
   DEAL_EARLY_BAN_TINY,
+  DEAL_EARLY_NEAT_SHAPES,
   DEAL_ROLE_EARLY_KEY,
   DEAL_ROLE_EARLY_RARE,
   DEAL_ROLE_EARLY_SOLVER,
@@ -39,8 +41,15 @@ export const ROLE_FAMILIES = {
   rare: [2, 11], // 3×3, 5直
 };
 
-/** early 默认禁族（γ）：过碎补丁 */
-export const EARLY_BAN_FAMILIES = new Set([7, 9]);
+/**
+ * early 常规采样禁族：只压「过撕盘」的（Z / 2直 / 5直）。
+ * 短 L、T、缺角 L、长 L 作为基础形状可出现。
+ */
+export const EARLY_BAN_FAMILIES = new Set([5, 7, 11]);
+/** 长 L 略软压（仍可出，权重低） */
+export const EARLY_SOFT_BAN_FAMILIES = new Set([]);
+/** 常规禁微块族：2 直（2 格）；破局 clutch 才放开 */
+export const MICRO_FAMILIES = new Set([7]);
 
 /**
  * @param {number} family
@@ -119,6 +128,7 @@ export function rollRole(phase, rng = Math.random, t = getTune()) {
  * @param {(b:any,m:number[][])=>boolean} opts.canPlace
  * @param {() => number} [opts.rng]
  * @param {boolean} [opts.allowBanned] early 禁族
+ * @param {boolean} [opts.allowMicro] 允许 ≤2 格
  */
 export function pickFormFromRole(opts) {
   const {
@@ -131,31 +141,54 @@ export function pickFormFromRole(opts) {
     canPlace,
     rng = Math.random,
     allowBanned = false,
+    allowMicro = false,
   } = opts;
 
-  const ban =
+  const t = getTune();
+  const banTiny =
     phase === 'early' &&
     !allowBanned &&
-    flag(getTune().DEAL_EARLY_BAN_TINY, DEAL_EARLY_BAN_TINY);
+    flag(t.DEAL_EARLY_BAN_TINY, DEAL_EARLY_BAN_TINY);
+  const neatEarly =
+    phase === 'early' &&
+    !allowBanned &&
+    flag(t.DEAL_EARLY_NEAT_SHAPES, DEAL_EARLY_NEAT_SHAPES);
+  const banMicro =
+    !allowMicro && flag(t.DEAL_BAN_MICRO, DEAL_BAN_MICRO);
 
   const mul = familyMulForPhase(phase);
   const base = familyBaseWeights();
-  const families = ROLE_FAMILIES[role] || ROLE_FAMILIES.staple;
+  // early 整齐：主粮 + 基础角块（短 L / T / 缺角），不含 Z/5直
+  const families = neatEarly
+    ? [...new Set([...ROLE_FAMILIES.staple, 4, 6, 9, 3])]
+    : ROLE_FAMILIES[role] || ROLE_FAMILIES.staple;
 
   /** @type {{ form: import('../forms.js').FormDef, w: number }[]} */
   const candidates = [];
 
   for (const fi of families) {
-    if (ban && EARLY_BAN_FAMILIES.has(fi)) continue;
+    if (banTiny && EARLY_BAN_FAMILIES.has(fi)) continue;
+    if (banTiny && EARLY_SOFT_BAN_FAMILIES.has(fi) && !allowBanned) continue;
+    if (banMicro && MICRO_FAMILIES.has(fi)) continue;
     const vars = FORM_FAMILIES[fi];
     if (!vars?.length) continue;
     const famW = Math.max(0, (base[fi] || 1) * (mul[fi] ?? 1));
     for (const form of vars) {
       if (tier && tierOfForm(form) !== tier) continue;
-      if (shapeClass && shapeClassOf(form) !== shapeClass) continue;
+      // early：角块可突破 shape 配方（否则 plan 只有 rect/bar 时永远抽不到 T/L）
+      if (
+        shapeClass &&
+        shapeClassOf(form) !== shapeClass &&
+        !(neatEarly && (fi === 4 || fi === 6 || fi === 9 || fi === 3))
+      ) {
+        continue;
+      }
+      const cells = form.matrix.flat().filter(Boolean).length;
+      if (banMicro && cells <= 2) continue;
       const key = matrixKey(form.matrix);
       if (usedKeys.has(key)) continue;
       if (!canPlace(board, form.matrix)) continue;
+      // 快路径：只用族权重（可放已滤）。重打分放在 tray 级，避免每候选扫全盘卡顿。
       candidates.push({ form, w: famW });
     }
   }

@@ -8,6 +8,7 @@ import {
   familyBaseWeights,
   matrixSize,
 } from '../forms.js';
+import { weightWithFit } from './fit-score.js';
 
 /**
  * @typedef {'rect' | 'bar_h' | 'bar_v' | 'corner' | 'skew' | 'tee' | 'dot'} ShapeClass
@@ -106,16 +107,17 @@ export function pickShapePlan(phase, rng = Math.random, fill = 0) {
   /** @type {{ plan: ShapeClass[], w: number }[]} */
   let table;
 
-  if (open || phase === 'early') {
+  if (phase === 'early' || open) {
+    // 前期：矩形/短条 + T/L 角块混搭（基础形状要全）
     table = [
-      { plan: ['rect', 'bar_h', 'corner'], w: 18 },
-      { plan: ['rect', 'bar_v', 'tee'], w: 16 },
-      { plan: ['bar_h', 'bar_v', 'rect'], w: 16 },
-      { plan: ['rect', 'corner', 'bar_h'], w: 14 },
-      { plan: ['bar_v', 'corner', 'rect'], w: 12 },
-      { plan: ['tee', 'rect', 'bar_h'], w: 10 },
-      { plan: ['skew', 'rect', 'bar_v'], w: 8 },
-      { plan: ['corner', 'bar_h', 'tee'], w: 6 },
+      { plan: ['rect', 'bar_h', 'corner'], w: 20 },
+      { plan: ['rect', 'tee', 'bar_v'], w: 18 },
+      { plan: ['rect', 'rect', 'bar_h'], w: 16 },
+      { plan: ['corner', 'bar_h', 'rect'], w: 14 },
+      { plan: ['tee', 'rect', 'bar_h'], w: 12 },
+      { plan: ['rect', 'bar_h', 'bar_v'], w: 12 },
+      { plan: ['corner', 'tee', 'rect'], w: 10 },
+      { plan: ['bar_v', 'corner', 'rect'], w: 8 },
     ];
   } else if (phase === 'mid') {
     table = [
@@ -236,10 +238,13 @@ export function pickFittingForm(
     for (const form of vars) {
       if (tier && tierOfFormFn(form) !== tier) continue;
       if (shapeClass && shapeClassOf(form) !== shapeClass) continue;
+      if (countCells(form.matrix) <= 2) continue;
       const key = form.matrix.map((row) => row.join('')).join('/');
       if (usedKeys.has(key)) continue;
       if (!canPlace(board, form.matrix)) continue;
-      candidates.push({ form, w: famW });
+      const w = weightWithFit(board, form, famW);
+      if (w <= 0) continue;
+      candidates.push({ form, w });
     }
   }
 

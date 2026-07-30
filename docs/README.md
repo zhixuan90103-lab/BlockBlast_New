@@ -10,7 +10,7 @@
 | **AI / 新窗口** | [../AGENTS.md](../AGENTS.md) → 本索引 → 按需下钻 |
 | **人类上手** | [../README.md](../README.md) → ENTRYPOINTS |
 | **改手感 / 消行 / 震动** | [FEEL-DESIGN.md](./FEEL-DESIGN.md) |
-| **改发块** | [DEAL-DESIGN.md](./DEAL-DESIGN.md) · [DEAL-RHYTHM.md](./DEAL-RHYTHM.md) |
+| **改发块** | **[DEAL-REFACTOR-DESIGN.md](./DEAL-REFACTOR-DESIGN.md)**（需求SSOT+重构）· [DEAL-SPEC.md](./DEAL-SPEC.md) |
 | **踩坑与迭代史** | [PROJECT-HISTORY.md](./PROJECT-HISTORY.md) |
 | **底座 / Capacitor** | [ENGINEERING.md](./ENGINEERING.md) |
 | **常量快照（可能滞后）** | [RUNTIME-DEFAULTS.md](./RUNTIME-DEFAULTS.md) → **以 defaults.js 为准** |
@@ -22,8 +22,10 @@
 | [ENTRYPOINTS.md](./ENTRYPOINTS.md) | 命令、DOM、Web/iOS 启动链 | 入口或脚本变更时 |
 | [ENGINEERING.md](./ENGINEERING.md) | WebGPU、Capacitor、Safe Area、插件 | 底座约定变更时 |
 | [FEEL-DESIGN.md](./FEEL-DESIGN.md) | 拖拽/投影/消行视觉/震动/预设；问题→规则 | **手感迭代后必更新** |
-| [DEAL-DESIGN.md](./DEAL-DESIGN.md) | 阶段发块目标与流程 | 发块策略变更时 |
-| [DEAL-RHYTHM.md](./DEAL-RHYTHM.md) | 形状/大小节奏研究落地 | 节奏表变更时 |
+| [DEAL-REFACTOR-DESIGN.md](./DEAL-REFACTOR-DESIGN.md) | **全量需求 + 发块重构设计 + PR 计划** | **需求/架构变更时必更** |
+| [DEAL-SPEC.md](./DEAL-SPEC.md) | 现行行为摘要 | 行为变更时同步 |
+| [DEAL-DESIGN.md](./DEAL-DESIGN.md) | 短摘要 | 可选 |
+| [DEAL-RHYTHM.md](./DEAL-RHYTHM.md) | 模块/阶段速查 | 节奏表变更时 |
 | [PROJECT-HISTORY.md](./PROJECT-HISTORY.md) | 里程碑、问题全表、决策日志 | 大迭代后追加章节 |
 | [RUNTIME-DEFAULTS.md](./RUNTIME-DEFAULTS.md) | defaults 摘录（可能过期） | 可选；改 defaults 后择机同步 |
 | [../plugins/native-haptics/README.md](../plugins/native-haptics/README.md) | 原生震动 API | 插件 API 变更时 |

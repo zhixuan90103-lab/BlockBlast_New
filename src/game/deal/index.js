@@ -1,13 +1,14 @@
 /**
- * 发块子系统公开 API
+ * 发块子系统公开 API（重构后）
  *
- * 模块：
- *   board-ops  — 盘面纯函数
- *   phase      — 阶段 / 权重
- *   bag        — 角色袋 staple/solver/key/rare
- *   sample     — 响应式采样
- *   clear-tray — 可选：本 tray 三步清屏
- *   generate   — 总控
+ * pipeline  — 意图编排
+ * session   — 跨 tray 会话（非剧本）
+ * accept    — 验收档案
+ * payoff    — T6 大消钥匙
+ * cavity    — 空腔补缺
+ * clear     — 全清/助清搜索
+ * sample    — 主采样
+ * board-ops — 盘面纯函数
  */
 export {
   anyTrayPieceFits,
@@ -20,5 +21,7 @@ export {
   lastDealMeta,
   resetDealState,
   rollDealPhase,
-} from './generate.js';
+} from './pipeline.js';
 export { ROLE_FAMILIES, roleMixForPhase, roleOfFamily, rollRole } from './bag.js';
+export { boardHasPayoffSetup, rankPayoffForms } from './payoff-match.js';
+export { getDealPolicy } from './policy.js';

@@ -101,45 +101,46 @@ export function familyMulForPhase(phase, t = getTune()) {
   const mul = Array(12).fill(1);
 
   if (phase === 'early') {
-    mul[0] = neat * 1.15; // 2×2 staple
-    mul[1] = neat * 1.4; // 3×2 staple
-    mul[2] = neat * 0.4; // 3×3 rare — 压过热（原 1.3）
-    mul[3] = neat * 0.95; // 长 L key
-    mul[10] = neat * 1.0; // 4 直 staple
-    mul[11] = neat * 0.55; // 5 直 rare
-    mul[8] = neat * 0.55; // 3 直
-    mul[6] = 0.32; // T
-    mul[5] = 0.28; // Z
-    mul[4] = 0.18; // 短 L
-    mul[9] = 0.12; // 缺角
-    mul[7] = 0.08; // 2 直
+    // 主粮矩形/短条 + 基础 T/L（多样）；仍压 Z / 5 直 / 过长条
+    mul[0] = neat * 1.55; // 2×2
+    mul[1] = neat * 1.6; // 3×2
+    mul[8] = neat * 1.25; // 3 直
+    mul[10] = neat * 0.35; // 4 直略压
+    mul[2] = neat * 0.4; // 3×3
+    mul[4] = neat * 0.95; // 短 L 基础
+    mul[6] = neat * 0.9; // T 基础
+    mul[9] = neat * 0.85; // 缺角小 L
+    mul[3] = neat * 0.45; // 长 L 可出、略少
+    mul[11] = 0.05; // 5 直
+    mul[5] = 0.06; // Z
+    mul[7] = 0.05; // 2 直
   } else if (phase === 'mid') {
-    // staple 抬起，solver 略降（原 scrap 过重）
-    mul[0] = 1.15;
-    mul[1] = 1.05;
-    mul[8] = 1.1;
-    mul[10] = 1.05;
-    mul[4] = scrap * 0.85;
-    mul[9] = scrap * 0.8;
-    mul[5] = scrap * 0.95; // Z 仍作 key 向
-    mul[6] = scrap * 0.8;
-    mul[7] = scrap * 0.55;
-    mul[3] = 1.05;
-    mul[2] = bigDamp * 0.85;
-    mul[11] = 0.65;
+    // 中大块主粮；碎块/2直压低（偶发破局靠 clutch 放开）
+    mul[0] = 1.35;
+    mul[1] = 1.3;
+    mul[8] = 1.25;
+    mul[10] = 1.2;
+    mul[3] = 1.15;
+    mul[4] = scrap * 0.7;
+    mul[9] = scrap * 0.55;
+    mul[5] = scrap * 0.85;
+    mul[6] = scrap * 0.75;
+    mul[7] = 0.12; // 2 直：常规几乎不来
+    mul[2] = bigDamp * 1.05;
+    mul[11] = 0.85;
   } else {
     mul[5] = awkward * 1.2; // Z
     mul[3] = awkward * 1.15; // 长 L
     mul[11] = awkward * 1.15; // 5 直
-    mul[10] = awkward * 1.05;
+    mul[10] = awkward * 1.1;
     mul[6] = awkward * 1.05;
-    mul[4] = awkward * 0.75;
-    mul[9] = awkward * 0.7;
-    mul[8] = 1.05;
-    mul[7] = 0.85;
-    mul[0] = 0.5;
-    mul[1] = 0.55;
-    mul[2] = 0.35;
+    mul[8] = 1.15;
+    mul[4] = awkward * 0.65;
+    mul[9] = awkward * 0.5;
+    mul[7] = 0.18; // 2 直仅残盘 clutch
+    mul[0] = 0.65;
+    mul[1] = 0.7;
+    mul[2] = 0.4;
   }
   return mul;
 }

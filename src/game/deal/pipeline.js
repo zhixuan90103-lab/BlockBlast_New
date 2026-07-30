@@ -1,0 +1,387 @@
+/**
+ * 发块管线：Intent 有序尝试（重构入口）
+ *
+ * 顺序（调研 CLEAR-PLAYER-RESEARCH）：
+ *  1) 续推清屏 keepClearPush
+ *  2) beat：真全清 → 助清减盘
+ *  3) 偶发 payoff 大消（T6）
+ *  4) 偶发空腔补缺
+ *  5) 阶段概率全清
+ *  6) 主采样 main
+ *  7) fallback
+ */
+import {
+  DEAL_MAX_ATTEMPTS,
+  DEAL_PHASE_ENABLED,
+  FIT_GUARANTEE,
+  TRAY_SIZE,
+} from '../defaults.js';
+import { countCells } from '../forms.js';
+import { getTune } from '../tune.js';
+import { acceptMainTray, acceptPayoffTray, acceptSpecialTray } from './accept.js';
+import {
+  countInstantFits,
+  existsPlacementOrder,
+  fillRatio,
+} from './board-ops.js';
+import { tryCavityGuideTray } from './cavity-match.js';
+import { tryAssistClearTray, tryClearTrayForBoard } from './clear-tray.js';
+import {
+  basePhaseFromFill,
+  familyMulForPhase,
+  rollDealPhase,
+} from './phase.js';
+import { getDealPolicy } from './policy.js';
+import {
+  boardHasPayoffSetup,
+  tryPayoffTray,
+} from './payoff-match.js';
+import {
+  collectAndPickTray,
+  fallbackGuaranteedTray,
+  sampleWeightedTray,
+  trayStats,
+} from './sample.js';
+import { allowMicroClutch } from './size-rhythm.js';
+import {
+  dealSession,
+  resetDealSession,
+  sessionBeforeDeal,
+  sessionOnEmit,
+} from './session.js';
+
+/** @typedef {import('./phase.js').DealPhase} DealPhase */
+
+export let lastDealMeta = {
+  fill: 0,
+  basePhase: /** @type {DealPhase} */ ('early'),
+  phase: /** @type {DealPhase} */ ('early'),
+  instant: 0,
+  attempts: 0,
+  mode: 'init',
+  clearPlanLen: /** @type {number|null} */ (null),
+  traysSinceAssist: 0,
+  assistStreakLeft: 0,
+  clearOfferPending: false,
+  clearOfferRounds: 0,
+};
+
+export function resetDealState() {
+  resetDealSession();
+}
+
+/** @deprecated */
+export function clearPendingDealPlan() {
+  resetDealState();
+}
+
+function signature(pieces) {
+  return pieces
+    .map((p) => p.matrix.map((row) => row.join('')).join('/'))
+    .sort()
+    .join('|');
+}
+
+function avgCells(pieces) {
+  if (!pieces.length) return 0;
+  let s = 0;
+  for (const p of pieces) s += countCells(p.matrix);
+  return s / pieces.length;
+}
+
+/**
+ * @param {(number|null)[][]} board
+ * @param {import('../forms.js').PieceDef[]} pieces
+ * @param {string} mode
+ * @param {number | null} clearLen
+ * @param {boolean} [wasAssistBeat]
+ */
+function emit(board, pieces, mode, clearLen, wasAssistBeat = false) {
+  const tray = pieces.slice(0, TRAY_SIZE);
+  dealSession.lastTraySig = signature(tray);
+  const stats = trayStats(board, tray);
+  const policy = getDealPolicy(lastDealMeta.phase || 'mid');
+
+  sessionOnEmit(mode, wasAssistBeat, policy.streakMax);
+
+  lastDealMeta.instant = stats.instant;
+  lastDealMeta.mode = mode;
+  lastDealMeta.clearPlanLen = clearLen;
+  lastDealMeta.attempts = (lastDealMeta.attempts || 0) + 1;
+  lastDealMeta.traysSinceAssist = dealSession.traysSinceAssist;
+  lastDealMeta.assistStreakLeft = dealSession.assistStreakLeft;
+  lastDealMeta.clearOfferPending = dealSession.clearOfferPending;
+  lastDealMeta.clearOfferRounds = dealSession.clearOfferRounds;
+
+  return tray;
+}
+
+/**
+ * @param {(number|null)[][]} board
+ * @param {DealPhase} phase
+ * @param {number} fill
+ * @param {number} maxAttempts
+ * @param {() => number} rng
+ */
+function runPipeline(board, phase, fill, maxAttempts, rng) {
+  const policy = getDealPolicy(phase);
+  const allowMicro = allowMicroClutch(fill, phase, rng);
+  const mul = familyMulForPhase(phase);
+
+  sessionBeforeDeal(fill, policy.clearRetryMax);
+
+  const forceEarlyFullClear =
+    policy.earlyForceFull &&
+    phase === 'early' &&
+    fill > 0.02 &&
+    fill <= policy.earlyClearFillMax;
+
+  const onAssistBeat =
+    dealSession.assistStreakLeft > 0 ||
+    dealSession.traysSinceAssist + 1 >= policy.every;
+
+  const finisherBeat =
+    onAssistBeat && fill > 0.02 && fill <= policy.finisherFillMax;
+
+  const keepClearPush =
+    dealSession.clearOfferPending &&
+    fill >= 0.005 &&
+    dealSession.clearOfferRounds < policy.clearRetryMax;
+
+  const forceSpecial =
+    forceEarlyFullClear || onAssistBeat || finisherBeat || keepClearPush;
+
+  // 1) 全清 / 续推 / 助清
+  if (forceSpecial) {
+    const offer = tryAssistClearTray(board, phase, fill, rng);
+    if (offer?.pieces && signature(offer.pieces) !== dealSession.lastTraySig) {
+      if (
+        offer.kind === 'full' &&
+        acceptSpecialTray(board, offer.pieces, fill, 'full')
+      ) {
+        const mode = keepClearPush
+          ? 'clear-retry'
+          : forceEarlyFullClear
+            ? 'early-full-clear'
+            : finisherBeat
+              ? 'finisher-clear'
+              : 'assist-full-clear';
+        return emit(board, offer.pieces, mode, TRAY_SIZE, true);
+      }
+      if (keepClearPush) {
+        const guided = tryCavityGuideTray(board, rng);
+        if (
+          guided &&
+          signature(guided) !== dealSession.lastTraySig &&
+          existsPlacementOrder(board, guided) &&
+          countInstantFits(board, guided) >= 1
+        ) {
+          return emit(board, guided, 'clear-retry-cavity', TRAY_SIZE, false);
+        }
+      }
+      if (
+        !keepClearPush &&
+        offer.kind === 'assist' &&
+        acceptSpecialTray(board, offer.pieces, fill, 'assist')
+      ) {
+        return emit(board, offer.pieces, 'assist-clear', TRAY_SIZE, true);
+      }
+    }
+  }
+
+  // 2) Setup 大消 payoff（T6）— 比机械清屏更贴近玩家「就差这块」
+  if (
+    !keepClearPush &&
+    fill > 0.12 &&
+    fill < 0.85 &&
+    boardHasPayoffSetup(board) &&
+    rng() < policy.payoffChance
+  ) {
+    const payoff = tryPayoffTray(board, rng);
+    if (
+      payoff &&
+      signature(payoff) !== dealSession.lastTraySig &&
+      acceptPayoffTray(board, payoff)
+    ) {
+      return emit(board, payoff, 'payoff-multi', null, false);
+    }
+  }
+
+  // 3) 空腔补缺
+  if (
+    !keepClearPush &&
+    !forceSpecial &&
+    (phase === 'early' || phase === 'mid') &&
+    fill > 0.06 &&
+    rng() < policy.cavityChance
+  ) {
+    const guided = tryCavityGuideTray(board, rng);
+    if (
+      guided &&
+      signature(guided) !== dealSession.lastTraySig &&
+      existsPlacementOrder(board, guided) &&
+      countInstantFits(board, guided) >= 1 &&
+      !guided.some((p) => countCells(p.matrix) <= 2)
+    ) {
+      return emit(board, guided, 'cavity-guide', TRAY_SIZE, false);
+    }
+  }
+
+  const sizedPick = (extra = {}) =>
+    collectAndPickTray(board, phase, {
+      attempts: Math.min(maxAttempts, extra.attempts ?? 32),
+      avoidSig: dealSession.lastTraySig,
+      signatureOf: signature,
+      preferExactSize: true,
+      fill,
+      simulate: extra.simulate !== false,
+      requireScrap: !!extra.requireScrap,
+      allowMicro: extra.allowMicro ?? allowMicro,
+      accept: (p) =>
+        extra.accept
+          ? extra.accept(p)
+          : acceptMainTray(
+              board,
+              p,
+              phase,
+              fill,
+              extra.allowMicro ?? allowMicro,
+            ),
+    });
+
+  // 4) 阶段稀有全清
+  if (!keepClearPush && phase === 'early') {
+    const clear = tryClearTrayForBoard(board, phase, fill, rng);
+    if (
+      clear &&
+      signature(clear) !== dealSession.lastTraySig &&
+      acceptSpecialTray(board, clear, fill, 'full')
+    ) {
+      return emit(board, clear, 'early-clear', TRAY_SIZE, true);
+    }
+  }
+
+  // 5) 主采样
+  if (phase === 'early') {
+    let picked = sizedPick({ attempts: 36, simulate: true });
+    if (picked) return emit(board, picked, 'early-size', null, false);
+
+    picked = sizedPick({
+      attempts: 28,
+      simulate: false,
+      accept: (p) => {
+        const inst = countInstantFits(board, p);
+        return (
+          inst >= 2 &&
+          existsPlacementOrder(board, p) &&
+          avgCells(p) >= 3.5 &&
+          acceptMainTray(board, p, phase, fill, false)
+        );
+      },
+    });
+    if (picked) return emit(board, picked, 'early-loose', null, false);
+  }
+
+  if (phase === 'mid') {
+    const clear = tryClearTrayForBoard(board, phase, fill, rng);
+    if (
+      clear &&
+      signature(clear) !== dealSession.lastTraySig &&
+      acceptSpecialTray(board, clear, fill, 'full')
+    ) {
+      return emit(board, clear, 'mid-clear', TRAY_SIZE, true);
+    }
+
+    let picked = sizedPick({
+      attempts: 36,
+      requireScrap: fill >= 0.65 && rng() < 0.15,
+      simulate: true,
+    });
+    if (picked) return emit(board, picked, 'mid-size-mix', null, false);
+
+    picked = sizedPick({ attempts: 28, simulate: true });
+    if (picked) return emit(board, picked, 'mid-size', null, false);
+
+    picked = sizedPick({
+      attempts: 24,
+      simulate: true,
+      accept: (p) =>
+        existsPlacementOrder(board, p) &&
+        countInstantFits(board, p) >= 1 &&
+        acceptMainTray(board, p, phase, fill, allowMicro),
+    });
+    if (picked) return emit(board, picked, 'mid-loose', null, false);
+  }
+
+  if (phase === 'late') {
+    const picked = sizedPick({
+      attempts: 40,
+      simulate: true,
+      allowMicro,
+    });
+    if (picked) return emit(board, picked, 'late-size', null, false);
+  }
+
+  // 6) 兜底
+  const fb = fallbackGuaranteedTray(board, 40, mul);
+  const hasMicro = fb.some((p) => countCells(p.matrix) <= 2);
+  return emit(board, fb, hasMicro ? 'fallback-dot' : 'fallback', null, false);
+}
+
+/**
+ * @param {{ snapshot: () => (number|null)[][] }} grid
+ * @param {{ maxAttempts?: number, rng?: () => number }} [opts]
+ */
+export function generateTray(grid, opts = {}) {
+  const t = getTune();
+  const maxAttempts = opts.maxAttempts ?? t.DEAL_MAX_ATTEMPTS ?? DEAL_MAX_ATTEMPTS;
+  const board = grid.snapshot();
+  const fill = fillRatio(board);
+  const basePhase = basePhaseFromFill(fill, t);
+
+  const phaseFlag = t.DEAL_PHASE_ENABLED ?? DEAL_PHASE_ENABLED;
+  const phaseOn =
+    typeof phaseFlag === 'number' ? phaseFlag >= 0.5 : !!phaseFlag;
+
+  lastDealMeta = {
+    fill,
+    basePhase,
+    phase: basePhase,
+    instant: 0,
+    attempts: 0,
+    mode: 'init',
+    clearPlanLen: null,
+    traysSinceAssist: dealSession.traysSinceAssist,
+    assistStreakLeft: dealSession.assistStreakLeft,
+    clearOfferPending: dealSession.clearOfferPending,
+    clearOfferRounds: dealSession.clearOfferRounds,
+  };
+
+  const rng = opts.rng || Math.random;
+
+  if (!FIT_GUARANTEE) {
+    const tray = sampleWeightedTray(rng);
+    return emit(board, tray, 'simple', null, false);
+  }
+
+  if (!phaseOn) {
+    const tray = fallbackGuaranteedTray(board, maxAttempts);
+    lastDealMeta.phase = basePhase;
+    return emit(board, tray, 'legacy', null, false);
+  }
+
+  const phase = rollDealPhase(basePhase, rng, t);
+  lastDealMeta.phase = phase;
+  return runPipeline(board, phase, fill, maxAttempts, rng);
+}
+
+export function anyTrayPieceFits(grid, tray) {
+  for (const p of tray) {
+    if (p && grid.canPlaceAnywhere(p.matrix)) return true;
+  }
+  if (tray.every((p) => p == null)) return true;
+  return false;
+}
+
+export { existsPlacementOrder, countInstantFits } from './board-ops.js';
+export { basePhaseFromFill, rollDealPhase, familyMulForPhase } from './phase.js';

@@ -50,19 +50,19 @@ export const DEAL_LATE_AWKWARD_MUL = 1.55;
 export const DEAL_MID_BIG_DAMP = 0.55;
 /**
  * mid 碎块/解题块倍率尺度（短 L、缺角、Z、T）。
- * 中期主手感：空位来块 + 不整齐小块。
+ * 中期以中大块为主；碎块仅偶发破局（见 clutch）。
  */
-export const DEAL_MID_SCRAP_MUL = 1.85;
+export const DEAL_MID_SCRAP_MUL = 0.95;
 /**
  * 立刻可放目标：
- * early 3；mid ≥2；late 恰好 1。
+ * early 3；mid ≥2；late 优先 1，允许 2（避免贴合好的 tray 被 instant=1 误杀）。
  */
 export const DEAL_EARLY_INSTANT_MIN = 3;
 export const DEAL_EARLY_INSTANT_MAX = 3;
 export const DEAL_MID_INSTANT_MIN = 2;
 export const DEAL_MID_INSTANT_MAX = 3;
 export const DEAL_LATE_INSTANT_MIN = 1;
-export const DEAL_LATE_INSTANT_MAX = 1;
+export const DEAL_LATE_INSTANT_MAX = 2;
 /**
  * 本 tray 清屏（仅当前盘、恰好 3 块摆完可全空；不跨轮预定）
  */
@@ -70,11 +70,78 @@ export const DEAL_EARLY_CLEAR_ENABLED = true;
 /** 兼容旧面板键（重构后固定 3 步 tray） */
 export const DEAL_EARLY_CLEAR_MIN = 3;
 export const DEAL_EARLY_CLEAR_MAX = 3;
-/** 超过此填充率不再尝试本 tray 清屏搜索 */
-export const DEAL_EARLY_CLEAR_FILL_MAX = 0.36;
-export const DEAL_EARLY_CLEAR_MAX_NODES = 1400;
-/** mid 尝试清屏 tray 的概率 */
-export const DEAL_MID_CLEAR_CHANCE = 0.12;
+/**
+ * 超过此填充率不再尝试「三步全清」。
+ * 清屏/助清改为「偶尔」触发，不要每 tray 都清屏包。
+ */
+export const DEAL_EARLY_CLEAR_FILL_MAX = 0.55;
+export const DEAL_EARLY_CLEAR_MAX_NODES = 1200;
+/**
+ * 阶段手感共识：
+ * - early：大摆放 + 大范围消除，偶尔清屏
+ * - mid：少量大消 + 少量清屏（加压）
+ * - late：压力为主，清屏更稀
+ */
+/** early 概率全清 — 偶尔 */
+export const DEAL_EARLY_CLEAR_CHANCE = 0.2;
+/** mid 清屏更稀 */
+export const DEAL_MID_CLEAR_CHANCE = 0.06;
+/** late 清屏最稀 */
+export const DEAL_LATE_CLEAR_CHANCE = 0.05;
+/**
+ * early 助清/全清 beat 更勤；mid/late 用更大间隔（pipeline 按阶段读）。
+ */
+export const DEAL_CLEAR_ASSIST_EVERY = 4;
+export const DEAL_CLEAR_ASSIST_EVERY_EARLY = 3;
+export const DEAL_CLEAR_ASSIST_EVERY_MID = 6;
+export const DEAL_CLEAR_ASSIST_EVERY_LATE = 7;
+/** 偶发助清成功后最多再连 1 次，不连刷 */
+export const DEAL_CLEAR_ASSIST_STREAK = 1;
+/** 助清/全清搜索允许的最高填充率 */
+export const DEAL_CLEAR_ASSIST_FILL_MAX = 0.82;
+/** 助清：三步后至少减少的占格数（或清空） */
+export const DEAL_CLEAR_ASSIST_MIN_DROP = 5;
+/**
+ * fill 很低时收官强搜全清的上限。
+ */
+export const DEAL_CLEAR_FINISHER_FILL_MAX = 0.2;
+/**
+ * early 是否「每 tray 强制全清」——关闭，改为偶发。
+ */
+export const DEAL_EARLY_FORCE_FULL_CLEAR = false;
+/**
+ * 空腔补缺：early 略勤（大消可读），mid 更少。
+ */
+export const DEAL_CAVITY_GUIDE_CHANCE = 0.12;
+export const DEAL_CAVITY_GUIDE_CHANCE_EARLY = 0.16;
+export const DEAL_CAVITY_GUIDE_CHANCE_MID = 0.08;
+/**
+ * Setup 大消 payoff：early 高（大范围消除），mid 低（少量）。
+ */
+export const DEAL_PAYOFF_CHANCE = 0.22;
+export const DEAL_PAYOFF_CHANCE_EARLY = 0.36;
+export const DEAL_PAYOFF_CHANCE_MID = 0.14;
+export const DEAL_PAYOFF_CHANCE_LATE = 0.1;
+/** payoff 至少造成几条线（行+列合计）才算钥匙 */
+export const DEAL_PAYOFF_MIN_LINES = 2;
+/**
+ * 已推送「清屏向」tray 但玩家未盘空时，连续再推清屏向的最多次数（含首次）。
+ * 超过后恢复普通发块，避免无限奶。
+ */
+export const DEAL_CLEAR_OFFER_RETRY_MAX = 6;
+/**
+ * early：压异形/过长条；采样时仍可用盘面引导加权（非整 tray 清屏包）。
+ */
+export const DEAL_EARLY_NEAT_SHAPES = true;
+/** early 清屏友好分在 tray 优选中的权重（普通采样内） */
+export const DEAL_EARLY_CLEAR_GUIDE_MUL = 0.35;
+/**
+ * 禁止常规推送 ≤2 格块（2 直 / 1×1）；仅高填充 clutch 小概率放开。
+ */
+export const DEAL_BAN_MICRO = true;
+/** late 且 fill≥此值时，小概率允许 1 个 ≤2 格破局块 */
+export const DEAL_MICRO_CLUTCH_FILL = 0.62;
+export const DEAL_MICRO_CLUTCH_CHANCE = 0.14;
 
 /**
  * 角色袋（β）：按阶段配比抽 staple/solver/key/rare，再在袋内加权。
@@ -84,18 +151,29 @@ export const DEAL_BAG_ENABLED = true;
 /** early 禁 2直/缺角（γ），fallback 时可放宽 */
 export const DEAL_EARLY_BAN_TINY = true;
 /** 阶段 × 角色目标占比（相对权重，会归一化） */
-export const DEAL_ROLE_EARLY_STAPLE = 0.7;
-export const DEAL_ROLE_EARLY_SOLVER = 0.1;
-export const DEAL_ROLE_EARLY_KEY = 0.12;
-export const DEAL_ROLE_EARLY_RARE = 0.08;
-export const DEAL_ROLE_MID_STAPLE = 0.3;
-export const DEAL_ROLE_MID_SOLVER = 0.45;
-export const DEAL_ROLE_MID_KEY = 0.2;
-export const DEAL_ROLE_MID_RARE = 0.05;
+/** early：主粮为主，solver（短L/T/缺角）明显可出，避免单调 */
+export const DEAL_ROLE_EARLY_STAPLE = 0.58;
+export const DEAL_ROLE_EARLY_SOLVER = 0.28;
+export const DEAL_ROLE_EARLY_KEY = 0.1;
+export const DEAL_ROLE_EARLY_RARE = 0.04;
+export const DEAL_ROLE_MID_STAPLE = 0.42;
+export const DEAL_ROLE_MID_SOLVER = 0.28;
+export const DEAL_ROLE_MID_KEY = 0.22;
+export const DEAL_ROLE_MID_RARE = 0.08;
 export const DEAL_ROLE_LATE_STAPLE = 0.25;
 export const DEAL_ROLE_LATE_SOLVER = 0.4;
 export const DEAL_ROLE_LATE_KEY = 0.28;
 export const DEAL_ROLE_LATE_RARE = 0.07;
+
+/**
+ * 盘面贴合加权：L/T 等多变体按「邻接/消线/凹口」优先，而非只保证能放。
+ * 关闭则退回纯权重可放抽样。
+ */
+export const DEAL_FIT_SCORE_ENABLED = true;
+/** 贴合分对抽样权重的增益尺度（越大越偏严丝合缝） */
+export const DEAL_FIT_WEIGHT = 2.8;
+/** tray 候选池里 snug 分的权重 */
+export const DEAL_FIT_TRAY_SCORE_MUL = 0.45;
 
 // —— 手感 FEEL_* ——
 /**
