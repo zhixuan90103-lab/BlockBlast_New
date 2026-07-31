@@ -31,7 +31,7 @@ IDLE → PICKUP(固定槽姿态, 无投影, 无震动)
 | P3 | 快滑不准 | 快：free 吸附；慢：edge hold |
 | P4 | 块右影左 | free 远离 sticky → 强制 free |
 | P5 | 影飞远处 | free 邻域；**影-free 切比雪夫 > `FEEL_GHOST_MAX_LAG`** → null |
-| P6 | 横拖上下跳 | 近距轴锁；lag 大时双轴 |
+| P6 | 横拖上下跳 / 居中闪 | **投影系统设计**：[GHOST-DESIGN.md](./GHOST-DESIGN.md)（抬升仅上移 · 死区滞回 · 轴意图） |
 | P7 | 拿起点乱跳 | 三区命中 + 槽中心固定抬升 |
 | P8 | 介入时机 | 形状**最底一排**占格进盘才 engage |
 | P9 | 震动乱/双下 | 换格瞬态 key+冷却；原生单脉冲直通 |
@@ -133,7 +133,7 @@ T1 → gap → C1 → gap → T2 → gap → C2 → gap → T3 → gap → C3
 
 | 项 | 约值 |
 |----|------|
-| 普通挪格 I/S | 0.45 / 0.25 |
+| 普通挪格 I/S | **0.5 / 0.25**（真机面板） |
 | 将消格 I/S | 0.70 / 0.30 |
 | GAP | 30ms |
 | 波1 T / C 起→末 | 1.0·0.45 / 50ms · 0.4→0.2 |
@@ -269,13 +269,33 @@ flash  →  fill  →  pause  →  reveal  →  game-over visible
 
 ---
 
-## 10. Ghost 策略摘要
+## 10. 投影（Ghost）— 设计摘要
 
-1. `!isBoardEngaged(bottomRow)` → null  
-2. `chebyshev(free, ghost) > FEEL_GHOST_MAX_LAG` → null  
-3. `fast \|\| stickyLag 大` → free±1 吸附  
-4. 慢近距 → open / edge hold（候选也须 ≤ maxLag）  
-5. free 不可放或超 lag → null（**不**钳盘边救命）  
+> **完整规格 SSOT**：[GHOST-DESIGN.md](./GHOST-DESIGN.md)  
+> 实现：`feel/ghost-policy.js` · 抬升边界 `feel/drag-session.js`
+
+### 产品目标
+
+跟手 · **居中稳定** · 不甩影 · 仅合法 · 横竖意图一致。
+
+### 流水线（每帧）
+
+1. 底排 engage → 否则无影  
+2. 由视觉 origin 算 **free**（浮点想落点）  
+3. **死区**（半格 + `SNAP_HYST`）内钉 **sticky**  
+4. 慢速：open/edge + 滞回步进；快速 / lag 大：free 邻域吸附  
+5. 轴意图：横优先同排；抬升**只计上移**  
+6. `lag > MAX_LAG` → 灭影（不钳盘边救命）
+
+### 关键出厂
+
+| 常量 | 含义 |
+|------|------|
+| `FEEL_GHOST_OPEN_SNAP` | 开阔换格 |
+| `FEEL_GHOST_SNAP_HYST` | 换格滞回 / 居中防抖 |
+| `FEEL_GHOST_EDGE_HOLD` | 边缘粘滞 |
+| `FEEL_GHOST_MAX_LAG` | 影-块最远 |
+| `FEEL_AXIS_DOMINANCE` | 横竖轴判定 |
 
 ---
 
@@ -298,11 +318,14 @@ flash  →  fill  →  pause  →  reveal  →  game-over visible
 | 区外框样式 | `SHOW_TRAY_ZONES`（默认 **关**；开则圆角槽可视化） |
 | 块大小 | `FEEL_TRAY_SCALE`（与区高独立） |
 
-### 投影关键出厂
+### 投影调参（详见 GHOST-DESIGN §5）
 
-| 常量 | 默认（以 defaults 为准） |
-|------|--------------------------|
-| `FEEL_GHOST_MAX_LAG` | **1.3** 格（影-块最大切比雪夫） |
+| 滑条 | 调什么 |
+|------|--------|
+| 开阔换格阈值 | 跟手灵敏 |
+| **换格滞回(防抖)** | 居中越稳越大 |
+| 边缘粘滞 | 贴死边难挤 |
+| 影-块最大距离 | 允许多远还显示影 |
 
 ### 加大「操作幅度」优先项
 

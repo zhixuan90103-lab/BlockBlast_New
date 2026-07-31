@@ -4,9 +4,13 @@
 import * as THREE from 'three';
 import {
   CELL_CORNER_RATIO,
+  acquireFilledCell,
+  applyFilledCellScale,
   createEmptyCell,
-  createFilledCell,
   getRoundedRectGeometry,
+  recolorFilledCell,
+  releaseFilledCell,
+  setFilledCellSize,
 } from './block-mesh.js';
 import {
   COLOR,
@@ -75,9 +79,28 @@ export function createBoardView(scene) {
   let debrisClearStart = null;
   let lastDebrisNow = 0;
 
+  /** 碎裂片：共享 1×1 平面，靠 scale 调大小 */
+  const debrisUnitGeo = new THREE.PlaneGeometry(1, 1);
+  debrisUnitGeo.userData.sharedTemplate = true;
+  /** @type {THREE.Mesh[]} */
+  const debrisMeshPool = [];
+  const DEBRIS_POOL_MAX = 128;
+
+  /** tray zone 装饰 mesh 池 */
+  /** @type {THREE.Mesh[]} */
+  const zoneMeshPool = [];
+  const ZONE_POOL_MAX = 24;
+
+  /**
+   * 棋盘落点投影专用池（与盘面/tray 实心块隔离，避免半透明污染）
+   * @type {THREE.Group[]}
+   */
+  const ghostCellPool = [];
+  const GHOST_POOL_MAX = 64;
+
   function disposeObject(m) {
     m.traverse?.((o) => {
-      // 共享模板几何勿 dispose（圆角缓存）
+      // 共享模板几何勿 dispose（圆角缓存 / debris 单位平面）
       if (o.geometry && !o.geometry.userData?.sharedTemplate) {
         o.geometry.dispose?.();
       }
@@ -92,12 +115,117 @@ export function createBoardView(scene) {
     }
   }
 
+  /**
+   * 回收 dynamic 层物体：filled / ghost / shadow / zone 分池。
+   * @param {THREE.Object3D} m
+   * @param {THREE.Object3D} parent
+   */
+  function releaseDynamicObject(m, parent) {
+    const kind = m.userData?.poolKind;
+    if (kind === 'ghost') {
+      releaseGhostCell(/** @type {THREE.Group} */ (m));
+      return;
+    }
+    if (
+      kind === 'filled' ||
+      m.userData?.kind === 'filledCell' ||
+      m.userData?.kind === 'filledOverlay'
+    ) {
+      releaseFilledCell(m);
+      return;
+    }
+    if (kind === 'shadow' && m.isMesh) {
+      // 阴影少（≤3），整对象 dispose，避免池化材质在 WebGPU 上丢透明
+      if (m.parent) m.parent.remove(m);
+      disposeObject(m);
+      return;
+    }
+    if (kind === 'zone' && m.isMesh) {
+      if (m.parent) m.parent.remove(m);
+      m.visible = false;
+      m.position.set(0, 0, 0);
+      m.rotation.set(0, 0, 0);
+      m.scale.set(1, 1, 1);
+      if (zoneMeshPool.length < ZONE_POOL_MAX) zoneMeshPool.push(m);
+      else disposeObject(m);
+      return;
+    }
+    if (m.parent) m.parent.remove(m);
+    else parent.remove(m);
+    disposeObject(m);
+  }
+
   function clearList(list, parent) {
     for (const m of list) {
-      parent.remove(m);
-      disposeObject(m);
+      releaseDynamicObject(m, parent);
     }
     list.length = 0;
+    // 兜底：清除未入 list 的游离节点（错位阴影残留）
+    while (parent.children.length > 0) {
+      releaseDynamicObject(parent.children[0], parent);
+    }
+  }
+
+  /**
+   * 棋盘落点投影 cell（半透明），与实心 filled 分池。
+   * @param {number} size
+   * @param {number} color
+   * @param {number} alpha
+   * @param {number} z
+   */
+  function acquireGhostCell(size, color, alpha, z) {
+    const a = Math.min(0.95, Math.max(0.04, alpha));
+    let g = ghostCellPool.pop();
+    if (!g) {
+      g = acquireFilledCell(size, color, a, z);
+    } else {
+      setFilledCellSize(g, size);
+      const children = g.children;
+      if (children[0]) children[0].position.z = z;
+      if (children[1]) children[1].position.z = z + 0.001;
+      if (children[2]) children[2].position.z = z + 0.002;
+      if (children[3]) children[3].position.z = z + 0.002;
+      if (children[4]) children[4].position.z = z + 0.003;
+      g.rotation.set(0, 0, 0);
+      g.position.set(0, 0, 0);
+      applyFilledCellScale(g, 1);
+      g.visible = true;
+    }
+    // 统一上色 + 钉死透明（池内可能曾是不透明实心）
+    recolorFilledCell(g, color, a);
+    g.traverse((o) => {
+      if (!o.isMesh || !o.material || Array.isArray(o.material)) return;
+      o.material.transparent = true;
+      o.material.depthWrite = false;
+      if ('forceSinglePass' in o.material) o.material.forceSinglePass = true;
+      o.material.needsUpdate = true;
+    });
+    g.renderOrder = -1;
+    g.userData.kind = 'ghostCell';
+    g.userData.poolKind = 'ghost';
+    g.userData.isEmpty = false;
+    return g;
+  }
+
+  /** @param {THREE.Group} g */
+  function releaseGhostCell(g) {
+    if (!g) return;
+    if (g.parent) g.parent.remove(g);
+    g.visible = false;
+    g.rotation.set(0, 0, 0);
+    g.position.set(0, 0, 0);
+    applyFilledCellScale(g, 1);
+    g.userData.poolKind = 'ghost';
+    g.userData.kind = 'ghostCell';
+    g.userData.fillColor = undefined;
+    if (ghostCellPool.length < GHOST_POOL_MAX) {
+      ghostCellPool.push(g);
+    } else {
+      // 池满：退回通用 filled 池路径（会 cap）
+      g.userData.poolKind = 'filled';
+      g.userData.kind = 'filledCell';
+      releaseFilledCell(g);
+    }
   }
 
   /**
@@ -105,8 +233,7 @@ export function createBoardView(scene) {
    */
   function clearBoardFills() {
     for (const fill of boardFills.values()) {
-      staticRoot.remove(fill);
-      disposeObject(fill);
+      releaseFilledCell(fill);
     }
     boardFills.clear();
   }
@@ -114,9 +241,108 @@ export function createBoardView(scene) {
   function removeBoardFill(key) {
     const fill = boardFills.get(key);
     if (!fill) return;
-    staticRoot.remove(fill);
-    disposeObject(fill);
+    releaseFilledCell(fill);
     boardFills.delete(key);
+  }
+
+  function acquireDebrisMesh(side, colHex) {
+    let mesh = debrisMeshPool.pop();
+    if (!mesh) {
+      mesh = new THREE.Mesh(
+        debrisUnitGeo,
+        new THREE.MeshBasicMaterial({
+          color: colHex,
+          transparent: true,
+          opacity: 1,
+          depthWrite: false,
+        }),
+      );
+      mesh.userData.poolKind = 'debris';
+    } else {
+      const mat = /** @type {THREE.MeshBasicMaterial} */ (mesh.material);
+      mat.color.setHex(colHex);
+      mat.opacity = 1;
+    }
+    mesh.scale.set(side, side, 1);
+    mesh.visible = true;
+    return mesh;
+  }
+
+  function releaseDebrisMesh(mesh) {
+    if (mesh.parent) mesh.parent.remove(mesh);
+    mesh.visible = false;
+    mesh.scale.set(1, 1, 1);
+    if (debrisMeshPool.length < DEBRIS_POOL_MAX) debrisMeshPool.push(mesh);
+    else disposeObject(mesh);
+  }
+
+  /**
+   * tray 阴影：每次新建 geo+material（数量极少），保证 WebGPU 半透明正确。
+   * @param {number[]} positions
+   * @param {number[]} indices
+   */
+  function acquireShadowMesh(positions, indices) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x2a1a0c,
+      transparent: true,
+      opacity: 0.32,
+      depthWrite: false,
+      depthTest: true,
+      side: THREE.DoubleSide,
+      // 避免被当成不透明批次
+      alphaTest: 0,
+    });
+    // r152+ / WebGPU：透明物体单通道混合更稳
+    if ('forceSinglePass' in mat) mat.forceSinglePass = true;
+
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.userData.poolKind = 'shadow';
+    mesh.renderOrder = -2; // 画在 tray 块下面
+    mesh.frustumCulled = true;
+    mesh.position.set(0, 0, 0);
+    mesh.rotation.set(0, 0, 0);
+    mesh.scale.set(1, 1, 1);
+    mesh.visible = true;
+    return mesh;
+  }
+
+  /**
+   * @param {number} w
+   * @param {number} h
+   * @param {number} cornerRatio
+   * @param {number} color
+   * @param {number} opacity
+   */
+  function acquireZoneMesh(w, h, cornerRatio, color, opacity) {
+    let mesh = zoneMeshPool.pop();
+    const geo = getRoundedRectGeometry(w, h, cornerRatio);
+    if (!mesh) {
+      mesh = new THREE.Mesh(
+        geo,
+        new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity,
+          depthWrite: false,
+        }),
+      );
+      mesh.userData.poolKind = 'zone';
+    } else {
+      mesh.geometry = geo;
+      const mat = /** @type {THREE.MeshBasicMaterial} */ (mesh.material);
+      mat.color.setHex(color);
+      mat.opacity = opacity;
+      mat.transparent = true;
+      mat.depthWrite = false;
+    }
+    mesh.visible = true;
+    return mesh;
   }
 
   function rebuildStatic(layout) {
@@ -150,7 +376,7 @@ export function createBoardView(scene) {
           outerW,
           outerH,
           outerR / Math.min(outerW, outerH),
-        ).clone(),
+        ),
         new THREE.MeshBasicMaterial({ color: COLOR.boardFrame }),
       );
       outer.position.set(c.x, c.y, -0.08);
@@ -162,7 +388,7 @@ export function createBoardView(scene) {
           innerW,
           innerH,
           innerR / Math.min(innerW, innerH),
-        ).clone(),
+        ),
         new THREE.MeshBasicMaterial({ color: COLOR.boardFill }),
       );
       bg.position.set(c.x, c.y, -0.04);
@@ -219,22 +445,28 @@ export function createBoardView(scene) {
    */
   function ensureBoardFill(key, slot, color, opacity = 1) {
     let block = boardFills.get(key);
-    if (block && block.userData.fillColor === color) {
+    const size = slot.userData.cellSize || 20;
+    if (block) {
+      if (block.userData.fillColor !== color) {
+        recolorFilledCell(block, color, opacity);
+        block.userData.fillColor = color;
+      }
+      if (block.userData.cellSize !== size) {
+        setFilledCellSize(block, size);
+        block.userData.cellSize = size;
+      }
       return block;
     }
-    if (block) removeBoardFill(key);
 
-    const size = slot.userData.cellSize || 20;
-    block = createFilledCell(size, color, opacity, 0.02);
+    block = acquireFilledCell(size, color, opacity, 0.02);
     block.position.set(slot.position.x, slot.position.y, 0.02);
-    block.userData = {
-      col: slot.userData.col,
-      row: slot.userData.row,
-      kind: 'filledOverlay',
-      cellSize: size,
-      isEmpty: false,
-      fillColor: color,
-    };
+    block.userData.col = slot.userData.col;
+    block.userData.row = slot.userData.row;
+    block.userData.kind = 'filledOverlay';
+    block.userData.poolKind = 'filled';
+    block.userData.cellSize = size;
+    block.userData.isEmpty = false;
+    block.userData.fillColor = color;
     staticRoot.add(block);
     boardFills.set(key, block);
     return block;
@@ -267,9 +499,16 @@ export function createBoardView(scene) {
     group.traverse((o) => {
       if (!o.isMesh || !o.material || Array.isArray(o.material)) return;
       const base = o.material.userData?.baseOpacity ?? 1;
+      if (op >= 0.999) {
+        // 恢复分层 base，勿强行 transparent（会 z 闪）
+        o.material.opacity = base;
+        o.material.transparent = base < 0.999;
+        o.material.depthWrite = base >= 0.999;
+        return;
+      }
       o.material.transparent = true;
       o.material.opacity = base * op;
-      o.material.depthWrite = op > 0.95 && base > 0.95;
+      o.material.depthWrite = false;
     });
   }
 
@@ -323,15 +562,16 @@ export function createBoardView(scene) {
         const cellOp = cellOpacity?.[row]?.[col] ?? 1;
         const fill = ensureBoardFill(key, slot, v, 1);
         // 恢复 transform；禁止整块改色（会抹掉 bevel/高光）
-        fill.scale.set(1, 1, 1);
+        // scale 走 sizeScale * anim，勿直接 set(1,1,1) 抹掉池化尺寸
+        applyFilledCellScale(fill, 1);
         fill.rotation.z = 0;
         fill.position.set(slot.position.x, slot.position.y, 0.02);
         fill.visible = true;
         setFillGroupOpacity(fill, cellOp);
         // 淡入时略放大→落定
+        let animScale = 1;
         if (cellOp < 0.999 && cellOp > 0.02) {
-          const s = 0.88 + 0.12 * cellOp;
-          fill.scale.set(s, s, 1);
+          animScale = 0.88 + 0.12 * cellOp;
         }
 
         // 仅「已落子且属于将满行/列」才预警（空槽、无关块不预警）
@@ -347,15 +587,15 @@ export function createBoardView(scene) {
               : Math.min(1, (clearT - delay) / shrinkSpan);
           // ease-in：略加快收尾
           const ease = localT ** 1.2;
-          const shrink = Math.max(0.06, 1 - ease * 0.98);
-          fill.scale.set(shrink, shrink, 1);
+          animScale = Math.max(0.06, 1 - ease * 0.98);
           // spin: +1 / -1，与行/列扫过方向一致（与缩放同 ease）
           fill.rotation.z = spin * ease * clearSpinMax;
         } else if (inPreclear) {
           // 将消预警：中心小幅旋转 + 轻微放大（仅填充）
           fill.rotation.z = wobble;
-          fill.scale.set(1.01, 1.01, 1);
+          animScale = 1.01;
         }
+        applyFilledCellScale(fill, animScale);
       }
     }
   }
@@ -384,15 +624,7 @@ export function createBoardView(scene) {
       const z = -0.02;
 
       // 外框（略亮）
-      const frame = new THREE.Mesh(
-        getRoundedRectGeometry(w, h, corner).clone(),
-        new THREE.MeshBasicMaterial({
-          color: 0x9b8cff,
-          transparent: true,
-          opacity: 0.38,
-          depthWrite: false,
-        }),
-      );
+      const frame = acquireZoneMesh(w, h, corner, 0x9b8cff, 0.38);
       frame.position.set(center.x, center.y, z);
       dynamicRoot.add(frame);
       dynamicMeshes.push(frame);
@@ -401,15 +633,7 @@ export function createBoardView(scene) {
       const inset = Math.max(2, (cell || 20) * 0.07);
       const iw = Math.max(2, w - inset * 2);
       const ih = Math.max(2, h - inset * 2);
-      const fill = new THREE.Mesh(
-        getRoundedRectGeometry(iw, ih, corner * 0.9).clone(),
-        new THREE.MeshBasicMaterial({
-          color: 0x3a2f8a,
-          transparent: true,
-          opacity: 0.55,
-          depthWrite: false,
-        }),
-      );
+      const fill = acquireZoneMesh(iw, ih, corner * 0.9, 0x3a2f8a, 0.55);
       fill.position.set(center.x, center.y, z + 0.002);
       dynamicRoot.add(fill);
       dynamicMeshes.push(fill);
@@ -444,14 +668,17 @@ export function createBoardView(scene) {
         frameW,
         frameH,
       );
-      // 投影统一本色半透，不改金/变色
+      // 投影统一本色半透，不改金/变色（独立 ghost 池，不进盘面 filled）
       const col = gcell.color ?? 0x93c5fd;
-      const ghost = createFilledCell(size, col, alpha, z);
+      const ghost = acquireGhostCell(size, col, alpha, z);
       ghost.position.set(center.x, center.y, z);
       // 仅将消格：旋转 + 轻微放大
       if (inClear) {
         ghost.rotation.z = wobble;
-        ghost.scale.set(1.01, 1.01, 1);
+        applyFilledCellScale(ghost, 1.01);
+      } else {
+        ghost.rotation.z = 0;
+        applyFilledCellScale(ghost, 1);
       }
       dynamicRoot.add(ghost);
       dynamicMeshes.push(ghost);
@@ -502,19 +729,7 @@ export function createBoardView(scene) {
 
     if (positions.length === 0) return;
 
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geo.setIndex(indices);
-    geo.computeVertexNormals();
-
-    const mat = new THREE.MeshBasicMaterial({
-      color: 0x2a1a0c,
-      transparent: true,
-      opacity: 0.32,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = acquireShadowMesh(positions, indices);
     dynamicRoot.add(mesh);
     dynamicMeshes.push(mesh);
   }
@@ -553,9 +768,10 @@ export function createBoardView(scene) {
         const color = Array.isArray(colors)
           ? colors[r]?.[c] || colors[0]?.[0] || 0x4a9eff
           : colors;
-        // 与盘面落子同一 createFilledCell，仅 size 不同（tray 更小）
-        const block = createFilledCell(size, color, opacity, z);
+        // 与盘面落子同一 filled cell 样式，仅 size 不同（tray 更小）；走对象池
+        const block = acquireFilledCell(size, color, opacity, z);
         block.position.set(p.x, p.y, z);
+        applyFilledCellScale(block, 1);
         dynamicRoot.add(block);
         dynamicMeshes.push(block);
       }
@@ -564,8 +780,7 @@ export function createBoardView(scene) {
 
   function clearAllDebris() {
     for (const p of debris) {
-      debrisRoot.remove(p.mesh);
-      disposeObject(p.mesh);
+      releaseDebrisMesh(p.mesh);
     }
     debris = [];
     debrisSpawned.clear();
@@ -660,15 +875,7 @@ export function createBoardView(scene) {
           // 方形边长：约 0.09～0.32 格边
           const side = size * (0.09 + rSize * 0.23);
 
-          const mesh = new THREE.Mesh(
-            new THREE.PlaneGeometry(side, side),
-            new THREE.MeshBasicMaterial({
-              color: colHex,
-              transparent: true,
-              opacity: 1,
-              depthWrite: false,
-            }),
-          );
+          const mesh = acquireDebrisMesh(side, colHex);
           mesh.position.set(sx, sy, 0.42);
           mesh.rotation.z = ang + (Math.random() - 0.5) * 0.8;
           debrisRoot.add(mesh);
@@ -710,8 +917,7 @@ export function createBoardView(scene) {
       const p = debris[i];
       const age = nowMs - p.born;
       if (age >= p.lifeMs) {
-        debrisRoot.remove(p.mesh);
-        disposeObject(p.mesh);
+        releaseDebrisMesh(p.mesh);
         debris.splice(i, 1);
         continue;
       }
@@ -727,13 +933,14 @@ export function createBoardView(scene) {
       p.vy *= 1 - (0.04 + dx * 0.12) * dt;
 
       const u = Math.min(1, age / p.lifeMs);
-      // 缩小终点因片而异，下落中逐渐缩小
+      // 缩小终点因片而异；单位平面以 baseW 为边长
       const endS = p.shrinkEnd ?? 0.1;
-      const scale = Math.max(endS, 1 - u * (1 - endS));
+      const lifeScale = Math.max(endS, 1 - u * (1 - endS));
+      const side = (p.baseW ?? 1) * lifeScale;
       const fade = u < 0.3 ? 1 : Math.max(0, 1 - (u - 0.3) / 0.7);
       p.mesh.position.set(p.x, p.y, 0.42);
       p.mesh.rotation.z = p.rot;
-      p.mesh.scale.set(scale, scale, 1);
+      p.mesh.scale.set(side, side, 1);
       const mat = /** @type {THREE.MeshBasicMaterial} */ (p.mesh.material);
       if (mat) mat.opacity = fade;
     }
@@ -956,8 +1163,21 @@ export function createBoardView(scene) {
     clearList(dynamicMeshes, dynamicRoot);
     clearAllDebris();
     clearBoardFills();
-    clearList(staticMeshes, staticRoot);
+    // 静态层：真销毁（布局重建/关局），不入池
+    for (const m of staticMeshes) {
+      staticRoot.remove(m);
+      disposeObject(m);
+    }
+    staticMeshes.length = 0;
     boardCells.clear();
+    // 排空本地池（材质可释放；共享几何保留在 geoCache）
+    while (debrisMeshPool.length) disposeObject(debrisMeshPool.pop());
+    while (zoneMeshPool.length) disposeObject(zoneMeshPool.pop());
+    while (ghostCellPool.length) {
+      const g = ghostCellPool.pop();
+      g.userData.poolKind = 'filled';
+      releaseFilledCell(g);
+    }
     scene.remove(root);
   }
 

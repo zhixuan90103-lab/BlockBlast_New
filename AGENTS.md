@@ -14,6 +14,7 @@
 |------|------|
 | 1 | 本文件 + [docs/README.md](./docs/README.md) |
 | 2 手感/消行/震动/死亡/布局 | [docs/FEEL-DESIGN.md](./docs/FEEL-DESIGN.md) |
+| 2b **投影** | **[docs/GHOST-DESIGN.md](./docs/GHOST-DESIGN.md)**（稳定/轴意图/死区） |
 | 3 发块 | **[docs/DEAL-PUSH-COMPLETE.md](./docs/DEAL-PUSH-COMPLETE.md)**（SSOT；[DEAL-DESIGN](./docs/DEAL-DESIGN.md) 仅摘要） |
 | 4 踩坑 / 项目笔记 | [docs/PROJECT-HISTORY.md](./docs/PROJECT-HISTORY.md)（**§13** 设置 UI·触控·摆放区） |
 | 5 底座 | [docs/ENGINEERING.md](./docs/ENGINEERING.md) · [docs/ENTRYPOINTS.md](./docs/ENTRYPOINTS.md) |

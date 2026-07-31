@@ -538,3 +538,36 @@ BridgeViewController
 | `ENTRYPOINTS.md` | 启动链 · feel-panel · Bridge harden |
 | `FEEL-DESIGN.md` §5/§11 | 设置 UI · 区高规则 · GAIN/lag |
 | 本节 **§13** | 项目笔记正文 |
+
+### 13.6 投影横拖上跳（P6 修复，2026-07-31）
+
+| 现象 | 原因 | 修改 |
+|------|------|------|
+| 手指横移，投影往上跳 | 横移行程 `×0.25` 计入抬升 → free 上移 | `drag-session`：抬升 **只计上移** |
+| 左格不合法时影跳到上格 | free 邻域按距离取最近，含纯竖 | `ghost-policy`：横意图优先同排；钉 sticky 行再找列 |
+| 块居中时投影左右连闪 | open=0.5 时 free≈n.5 会 n↔n+1 来回踩阈值 | `FEEL_GHOST_SNAP_HYST` 滞回；quantize 钉 sticky |
+
+### 13.7 投影：从 BUG 修补 → 系统设计（2026-07-31）
+
+将 §13.6 的修补**提升为正式设计**，避免再当零散 hotfix：
+
+| 动作 | 说明 |
+|------|------|
+| 新 SSOT | **[GHOST-DESIGN.md](./GHOST-DESIGN.md)**：目标、free/sticky、死区滞回、轴意图、流水线、验收 |
+| 代码重构 | `ghost-policy.js` 按流水线分节：engage → free → 死区 → sticky 步进 → free 吸附 → maxLag；抽出 `resolveStickyStep` / `freeSnapGated` |
+| 抬升边界 | `drag-session` 明确「仅上移计 travel」为设计，非临时补丁 |
+| FEEL-DESIGN | §10 改为摘要 + 指向 GHOST-DESIGN；P6 指向设计文 |
+| 禁止回退 | 横移抬升、`Math.round` 半格无滞回、free 钳盘边救命 |
+
+之后改投影：**先改 GHOST-DESIGN，再改代码**。
+
+### 13.8 自适应换格：指速 × 邻格可放（2026-07-31）
+
+产品目标：快扫及时跟、空旷慢拖贴手、贴边/缝不乱跳不肉。
+
+| 机制 | 实现 |
+|------|------|
+| 速度因子 | `pointerSpeedT` → 调制 open/hyst/死区 |
+| 盘面因子 | 邻格 `fits` → corridor 更灵；否则 edge≥EDGE_MIN |
+| 滞回下限 | `SNAP_HYST_MIN` 防快扫再闪 |
+| 代码 | `ghost-policy.adaptiveThresholds` |

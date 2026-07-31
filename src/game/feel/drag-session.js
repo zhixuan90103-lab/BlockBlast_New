@@ -157,9 +157,9 @@ export function samplePointer(session, fx, fy, layout, getTune) {
   session.fingerFx = fx;
   session.fingerFy = fy;
 
+  // 设计：抬升 travel 只计上移（docs/GHOST-DESIGN.md §3）。横移不计，避免 free 上移导致影横跳。
   const upCells = Math.max(0, (session.startFy - fy) / cell);
-  const horizCells = Math.abs((fx - session.startFx) / cell);
-  const travel = upCells + horizCells * 0.25;
+  const travel = upCells;
   const range = tune.FEEL_DRAG_LIFT_TRAVEL_CELLS;
   const tRaw = range > 0 ? travel / range : 1;
   const t = Math.min(1, Math.max(0, tRaw));

@@ -268,8 +268,8 @@ export const FEEL_DRAG_LIFT_POWER = 1.75;
 export const FEEL_POINTER_GAIN_MODE = 0;
 /** 速度模式：慢速增益下限 — 手感1 */
 export const FEEL_POINTER_GAIN_MIN = 1.0;
-/** 速度模式：快速增益上限 — 手感1 真机标定（截图 1.35） */
-export const FEEL_POINTER_GAIN_MAX = 1.35;
+/** 速度模式：快速增益上限 — 手感1：略抬高以配合投影跟手 */
+export const FEEL_POINTER_GAIN_MAX = 1.4;
 /**
  * 指速参考（格/秒，仅 MODE=0）：达到此速度附近增益接近 MAX。— 手感1 真机标定
  */
@@ -292,7 +292,7 @@ export const FEEL_DRAG_FOLLOW_GAIN_MAX = FEEL_POINTER_GAIN_MAX;
 export const FEEL_BOARD_ENGAGE_OVERLAP = 0;
 
 /** 投影换格瞬态震动（普通挪格，无消）— 真机面板标定 */
-export const FEEL_HAPTIC_GHOST_INTENSITY = 0.45;
+export const FEEL_HAPTIC_GHOST_INTENSITY = 0.5;
 export const FEEL_HAPTIC_GHOST_SHARPNESS = 0.25;
 /** 投影到「将消」格 — 真机面板标定 */
 export const FEEL_HAPTIC_CLEAR_PREVIEW_INTENSITY = 0.7;
@@ -338,8 +338,8 @@ export const FEEL_HAPTIC_CLEAR_FX_C3_START_SHARPNESS = 0.06;
 export const FEEL_HAPTIC_CLEAR_FX_C3_END_INTENSITY = 0.1;
 export const FEEL_HAPTIC_CLEAR_FX_C3_END_SHARPNESS = 0.0;
 
-/** 同一/连发去重冷却（ms） */
-export const FEEL_HAPTIC_GHOST_COOLDOWN_MS = 108;
+/** 同一/连发去重冷却（ms）— 真机面板标定 */
+export const FEEL_HAPTIC_GHOST_COOLDOWN_MS = 48;
 /**
  * tray 内单格边长 / 棋盘单格边长。
  * 正版底栏 ≈ 0.50；拖起后 1.0。
@@ -360,25 +360,36 @@ export const FEEL_GAIN_SMOOTH_TIME = 0.018;
 /** 合法投影：本色半透；非法不显示投影 */
 export const FEEL_GHOST_ALPHA = 0.15;
 /**
- * 开阔区投影换格阈值（格）。相邻方向仍可放置 → 约 0.5 即跟手。
+ * 开阔区投影换格基础阈值（格）。本体跟手：默认半格中线，勿 &lt;0.45 以免影提前跳。
+ * 见 docs/GHOST-DESIGN.md § 自适应。
  */
 export const FEEL_GHOST_OPEN_SNAP = 0.5;
 /**
- * 边缘区慢速粘滞阈值（格）。
- * 仅「慢速 + 朝不可放方向」时使用，防贴边误滑；快速时不生效。
+ * 投影换格滞回基础（格）。半格量化防抖；宜小，保证「到格即切」。
+ */
+export const FEEL_GHOST_SNAP_HYST = 0.06;
+/** 滞回下限：再快也不完全取消防抖 */
+export const FEEL_GHOST_SNAP_HYST_MIN = 0.04;
+/**
+ * 邻格可放时对 open 的再乘。本体跟手默认 1（不再压低 open 提前换格）。
+ */
+export const FEEL_GHOST_OPEN_CORRIDOR_MUL = 1.0;
+/**
+ * 卡边粘滞阈值（格）：邻格不可放时，本体相对 sticky 偏移超过该值才尝试换影。
+ * 产品要求：卡边拖放幅度 &gt; 1.3 格才切换阴影。
  */
 export const FEEL_GHOST_EDGE_HOLD = 1.3;
+/** 卡边有效阈值下限；与 HOLD 同为 1.3，避免自适应压低 */
+export const FEEL_GHOST_EDGE_MIN = 1.3;
 /**
- * 影相对块 free 原点的最大切比雪夫距离（格）。
- * 超过则取消投影（影不许甩块）；与 EDGE_HOLD 无关。
- * 默认 ~1：邻格内可跟，再远灭影。
+ * 影相对块 free 的最大切比雪夫距离（格）。
+ * 须 &gt; EDGE_HOLD，否则卡边未达 1.3 就因 lag 灭影。
  */
-export const FEEL_GHOST_MAX_LAG = 1.3;
+export const FEEL_GHOST_MAX_LAG = 1.45;
 /**
- * 指速 ≥ 参考指速 × 该系数 → 投影进入「快速精准」模式（free 吸附，不贴边 1.5）。
- * 慢下来后回到边缘粘滞。
+ * 指速 ≥ 参考指速 × 该系数 → 快精 free 吸附 + 速度因子顶满。
  */
-export const FEEL_GHOST_FAST_SPEED_RATIO = 0.45;
+export const FEEL_GHOST_FAST_SPEED_RATIO = 0.36;
 /**
  * 快速模式退出滞回：指速 < 进入阈值 × 该系数才回慢速贴边。
  */

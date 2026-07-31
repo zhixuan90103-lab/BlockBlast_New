@@ -22,7 +22,8 @@
 |------|------|----------|
 | [ENTRYPOINTS.md](./ENTRYPOINTS.md) | 命令、DOM、Web/iOS 启动链 | 入口、UI 壳、脚本变更时 |
 | [ENGINEERING.md](./ENGINEERING.md) | WebGPU、Capacitor、Safe Area、插件、触控硬化 | 底座约定变更时 |
-| [FEEL-DESIGN.md](./FEEL-DESIGN.md) | 拖拽/投影/消行/屏震/debris/震动/死亡/预设/布局区；P1–P24 | **手感·布局迭代后必更新** |
+| [FEEL-DESIGN.md](./FEEL-DESIGN.md) | 拖拽/投影摘要/消行/屏震/debris/震动/死亡/预设/布局区；P1–P24 | **手感·布局迭代后必更新** |
+| [GHOST-DESIGN.md](./GHOST-DESIGN.md) | **投影完整规格 SSOT**（稳定/轴意图/死区滞回） | **改投影行为时必更** |
 | [DEAL-PUSH-COMPLETE.md](./DEAL-PUSH-COMPLETE.md) | **发块完整规格** | **需求/发块变更时必更** |
 | [DEAL-REFACTOR-DESIGN.md](./DEAL-REFACTOR-DESIGN.md) | 重构设计 + 历史需求表 | 架构大改时同步 |
 | [DEAL-SPEC.md](./DEAL-SPEC.md) | 现行行为短摘要 | 行为变更时同步 |
@@ -44,6 +45,7 @@
 | 死亡演出 / 结算 overlay | `src/game/game.js` deathFx · `style.css` · `index.html` |
 | 震动曲线（含 3 波） | `src/game/feel/haptics-ghost.js` |
 | 触控卫生（禁双指/双击缩放/长按菜单） | `src/touch-hygiene.js` · iOS `BridgeViewController` |
+| 投影策略 | `src/game/feel/ghost-policy.js` · 设计 [GHOST-DESIGN.md](./GHOST-DESIGN.md) |
 | 发块 | `src/game/deal/*`（入口 `pipeline.js`） |
 | 原生震动桥 | `src/native-haptics.js` · `plugins/native-haptics/` |
 
@@ -73,3 +75,4 @@
 | **触控清理**（双指/双击/放大镜） | ENTRYPOINTS · HISTORY §13 | `touch-hygiene.js` · BridgeViewController |
 | **摆放区高度**中心固定 · 默认 7 | FEEL §11 · HISTORY §13 | `layout.js` · `LAYOUT_TRAY_BAND_CELLS` |
 | 出厂标定（增益 1.35 · 影 lag 1.3 · tray Y） | HISTORY §13 · defaults.js | 见 §13 表 |
+| **投影系统设计**（居中稳、横拖不跳） | **[GHOST-DESIGN.md](./GHOST-DESIGN.md)** · HISTORY §13.7 | `ghost-policy` · `drag-session` |

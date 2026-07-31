@@ -20,18 +20,32 @@
 | `FEEL_DRAG_OFFSET_Y_MIN` / `MAX` | −2.5 / −4.0 |
 | `FEEL_DRAG_LIFT_TRAVEL_CELLS` / `POWER` | 4.5 / 1.75 |
 | `FEEL_POINTER_GAIN_MODE` | 0（速度） |
-| `FEEL_POINTER_GAIN_MIN` / `MAX` | 1.0 / **1.35** |
+| `FEEL_POINTER_GAIN_MIN` / `MAX` | 1.0 / **1.4** |
 | `FEEL_POINTER_SPEED_REF` | 6 |
 | `FEEL_SMOOTH_TIME` / `GAIN_SMOOTH_TIME` | 0.012 / 0.018 |
 
 手感2：`MODE=1`，`GAIN_K=1.6`，抬升 −2.0 固定（见 `feel-presets.js`）。
 
-## 投影
+## 震动（投影/将消/消除 · 真机面板 2026-07-31）
+
+| 常量 | 值 |
+|------|-----|
+| `FEEL_HAPTIC_GHOST_INTENSITY` / `SHARPNESS` | **0.5** / **0.25** |
+| `FEEL_HAPTIC_CLEAR_PREVIEW_*` | 0.7 / 0.3 |
+| `FEEL_HAPTIC_CLEAR_FX_GAP_MS` | 30 |
+| `FEEL_HAPTIC_CLEAR_FX_T1_INTENSITY` | 1.0 |
+| `FEEL_HAPTIC_GHOST_COOLDOWN_MS` | **48** |
+| 波3 连续 | 40ms · 0.25→0.1 · 锐 0.06→0 |
+
+## 投影（设计见 [GHOST-DESIGN.md](./GHOST-DESIGN.md)）
 
 | 常量 | 值 |
 |------|-----|
 | `FEEL_GHOST_MAX_LAG` | **1.3** |
-| `FEEL_GHOST_OPEN_SNAP` / `EDGE_HOLD` | 见 defaults |
+| `FEEL_GHOST_OPEN_SNAP` | **0.30** |
+| `FEEL_GHOST_SNAP_HYST` | **0.14**（居中防抖） |
+| `FEEL_GHOST_FAST_SPEED_RATIO` | **0.38** |
+| `FEEL_GHOST_EDGE_HOLD` | 1.3 |
 | `FEEL_GHOST_ALPHA` | 0.15 |
 
 ## 布局 / tray

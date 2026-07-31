@@ -1,6 +1,6 @@
 /**
  * 统一「单个有色格子」样式：盘面落子 / tray 摆放 / 拖拽 共用。
- * 圆角用自建 BufferGeometry（WebGPU 友好）；每 mesh clone，避免 dispose 共享缓冲。
+ * 圆角几何全局缓存共享；filled cell 用对象池，避免每帧 new/dispose。
  */
 import * as THREE from 'three';
 
@@ -80,7 +80,7 @@ function buildRoundedRectGeometry(w, h, radius, segPerCorner = 5) {
 const geoCache = new Map();
 
 /**
- * 取模板几何；mesh 使用时请 .clone()。
+ * 取共享模板几何（勿 dispose；多 mesh 共用同一 BufferGeometry）。
  * @param {number} w
  * @param {number} h
  * @param {number} [cornerRatio]
@@ -99,22 +99,94 @@ export function getRoundedRectGeometry(w, h, cornerRatio = CELL_CORNER_RATIO) {
 }
 
 function mkRoundedPlane(w, h, col, op, zz, cornerRatio = CELL_CORNER_RATIO) {
-  // 每 mesh 独立 clone，rebuild dispose 不会毁掉缓存 / 其他 mesh
-  const geo = getRoundedRectGeometry(w, h, cornerRatio).clone();
-  geo.userData.sharedTemplate = false;
+  // 共享几何；仅材质 per-mesh（颜色/透明度独立）
+  const geo = getRoundedRectGeometry(w, h, cornerRatio);
+  const isTrans = op < 0.999;
   const mat = new THREE.MeshBasicMaterial({
     color: col,
-    transparent: op < 0.999,
+    transparent: isTrans,
     opacity: op,
-    depthWrite: op >= 0.999,
+    depthWrite: !isTrans,
     side: THREE.DoubleSide,
   });
+  if ('forceSinglePass' in mat) mat.forceSinglePass = isTrans;
   // 供 view 动画恢复 opacity，禁止整块 setHex 抹平分层色
   mat.userData.baseOpacity = op;
   mat.userData.baseColor = col;
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.z = zz;
   return mesh;
+}
+
+/** @type {THREE.Group[]} */
+const filledPool = [];
+const FILLED_POOL_MAX = 256;
+
+/**
+ * 按分层结构给已有 filled cell 上色（保留 bevel/高光比例）。
+ * @param {THREE.Group} g
+ * @param {number} color
+ * @param {number} [opacity]
+ */
+export function recolorFilledCell(g, color, opacity = 1) {
+  const children = g.children;
+  // 0 rim, 1 main, 2 top, 3 bot, 4 glint
+  const specs = [
+    { f: 0.5, opMul: 1 },
+    { f: 1, opMul: 1 },
+    { f: 1.28, opMul: 0.55 },
+    { f: 0.65, opMul: 0.5 },
+    { f: null, opMul: 0.28, white: true },
+  ];
+  const wantTransparent = opacity < 0.999;
+  for (let i = 0; i < children.length && i < specs.length; i++) {
+    const mesh = children[i];
+    if (!mesh?.isMesh || !mesh.material) continue;
+    const mat = mesh.material;
+    const sp = specs[i];
+    const col = sp.white ? 0xffffff : shade(color, sp.f);
+    // 半透明用途（ghost）：分层也保持整体可透，避免叠成实心
+    const op = wantTransparent
+      ? opacity * (i === 1 ? 1 : sp.opMul * 0.85)
+      : opacity * sp.opMul;
+    const prevT = mat.transparent;
+    mat.color.setHex(col);
+    mat.opacity = Math.min(1, Math.max(0, op));
+    mat.transparent = wantTransparent || op < 0.999;
+    mat.depthWrite = !mat.transparent;
+    mat.userData.baseOpacity = mat.opacity;
+    mat.userData.baseColor = col;
+    if ('forceSinglePass' in mat) mat.forceSinglePass = mat.transparent;
+    // transparent 开关变化时必须 needsUpdate，否则 WebGPU 仍走不透明通道
+    if (prevT !== mat.transparent) mat.needsUpdate = true;
+  }
+  g.userData.color = color;
+  if (g.userData.mainMat && children[1]?.material) {
+    g.userData.mainMat = children[1].material;
+  }
+}
+
+/**
+ * 内容尺寸缩放（与消行动画 scale 相乘，勿直接 overwrite group.scale）。
+ * @param {THREE.Group} g
+ * @param {number} size 目标边长
+ */
+export function setFilledCellSize(g, size) {
+  const base = g.userData.baseSize || size;
+  const s = Math.max(2, size) / Math.max(2, base);
+  g.userData.sizeScale = s;
+  applyFilledCellScale(g, 1);
+}
+
+/**
+ * 应用动画缩放：最终 scale = sizeScale * animScale
+ * @param {THREE.Object3D} g
+ * @param {number} [animScale]
+ */
+export function applyFilledCellScale(g, animScale = 1) {
+  const sizeS = g.userData.sizeScale ?? 1;
+  const a = animScale;
+  g.scale.set(sizeS * a, sizeS * a, 1);
 }
 
 /**
@@ -179,7 +251,73 @@ export function createFilledCell(size, color, opacity = 1, z = 0) {
   g.userData.color = color;
   g.userData.isEmpty = false;
   g.userData.kind = 'filledCell';
+  g.userData.baseSize = s;
+  g.userData.sizeScale = 1;
+  g.userData.poolKind = 'filled';
   return g;
+}
+
+/**
+ * 从池取 filled cell；不足则新建。
+ * @param {number} size
+ * @param {number} color
+ * @param {number} [opacity]
+ * @param {number} [z]
+ */
+export function acquireFilledCell(size, color, opacity = 1, z = 0) {
+  let g = filledPool.pop();
+  if (!g) {
+    g = createFilledCell(size, color, opacity, z);
+  } else {
+    recolorFilledCell(g, color, opacity);
+    setFilledCellSize(g, size);
+    // 子 mesh z 偏移随 z 基准
+    const children = g.children;
+    if (children[0]) children[0].position.z = z;
+    if (children[1]) children[1].position.z = z + 0.001;
+    if (children[2]) children[2].position.z = z + 0.002;
+    if (children[3]) children[3].position.z = z + 0.002;
+    if (children[4]) children[4].position.z = z + 0.003;
+    g.rotation.set(0, 0, 0);
+    g.position.set(0, 0, 0);
+    g.visible = true;
+  }
+  g.userData.isEmpty = false;
+  g.userData.kind = 'filledCell';
+  g.userData.poolKind = 'filled';
+  return g;
+}
+
+/**
+ * 回收 filled cell（不 dispose 材质/几何，供下帧复用）。
+ * @param {THREE.Object3D | null | undefined} g
+ */
+export function releaseFilledCell(g) {
+  if (!g) return;
+  if (g.parent) g.parent.remove(g);
+  g.visible = false;
+  g.rotation.set(0, 0, 0);
+  g.position.set(0, 0, 0);
+  // 动画/消行 scale 归位，避免脏 sizeScale 残留
+  g.userData.sizeScale = g.userData.sizeScale ?? 1;
+  applyFilledCellScale(g, 1);
+  // 清业务标记，避免脏状态
+  if (g.userData) {
+    g.userData.fillColor = undefined;
+    g.userData.kind = 'filledCell';
+    g.userData.poolKind = 'filled';
+  }
+  if (filledPool.length < FILLED_POOL_MAX) {
+    filledPool.push(/** @type {THREE.Group} */ (g));
+  } else {
+    // 池满：仅 dispose 材质，几何为共享模板
+    g.traverse?.((o) => {
+      if (o.isMesh) {
+        if (Array.isArray(o.material)) o.material.forEach((m) => m.dispose?.());
+        else o.material?.dispose?.();
+      }
+    });
+  }
 }
 
 export function createEmptyCell(size, colors, opacity = 1) {
@@ -213,6 +351,11 @@ export function setGroupColor(group, hex, opacity = 1) {
     main.opacity = opacity;
     main.transparent = opacity < 0.999;
   }
+}
+
+/** 调试/测试用：当前池大小 */
+export function filledPoolSize() {
+  return filledPool.length;
 }
 
 export { shade };
