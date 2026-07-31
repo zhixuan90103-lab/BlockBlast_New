@@ -15,12 +15,11 @@ import {
   COLOR,
   FEEL_CLEAR_MS,
   FEEL_CLEAR_STAGGER,
-  FEEL_COMMIT_MS,
   FEEL_DEATH_FLASH_MS,
   FEEL_DEATH_PAUSE_MS,
   FEEL_DEATH_ROW_MS,
   FEEL_HIT_SLOP,
-  FEEL_INPUT_LOCK_MS,
+  FEEL_PLACE_SNAP_MS,
   FEEL_REJECT_MS,
   GRID,
   PIECE_PALETTE,
@@ -89,7 +88,8 @@ export function createGame(opts) {
   let hover = null;
 
   /**
-   * 落子消行动画：先播特效再真正 clearLines
+   * 落子消行动画：先播特效，结束时只 clearExactCells（上一波格表），
+   * 不整行扫盘，后放入的块不并入本波消除。
    * @type {null | {
    *   lines: { rows: number[], cols: number[], count: number },
    *   cells: { row: number, col: number, color: number, delay01: number, spin: number }[],
@@ -100,6 +100,24 @@ export function createGame(opts) {
    * }}
    */
   let clearFx = null;
+  /** 消行演出进行中再触发的消除，排队顺序播 */
+  /** @type {NonNullable<typeof clearFx>[]} */
+  let clearQueue = [];
+
+  /**
+   * 松手落位：拖拽位 → 目标格快速吸附（视觉）；逻辑已 place。
+   * @type {null | {
+   *   start: number,
+   *   duration: number,
+   *   fromX: number,
+   *   fromY: number,
+   *   toX: number,
+   *   toY: number,
+   *   piece: import('./forms.js').PieceDef,
+   *   hideCells: { row: number, col: number }[],
+   * }}
+   */
+  let placeSnap = null;
 
   /**
    * 死亡演出：闪红×2 → 自下而上填满 → 停顿 → 自上而下露出死亡盘面 → 结算
@@ -423,6 +441,8 @@ export function createGame(opts) {
     drag = null;
     hover = null;
     clearFx = null;
+    clearQueue = [];
+    placeSnap = null;
     deathFx = null;
     setDeathFlash(false);
     ghostHaptics.onClearFxEnd?.();
@@ -456,25 +476,93 @@ export function createGame(opts) {
     root.style.setProperty('--ui-score-shift', `${shiftPx}px`);
   }
 
+  /**
+   * 落位目标 origin（frame 坐标，与 drag.frameX/Y 同语义：形状左上角）
+   * @param {number} originRow
+   * @param {number} originCol
+   */
+  function placeOriginFrame(originRow, originCol) {
+    const rect = layout.cellRect(originCol, originRow);
+    return { x: rect.x, y: rect.y };
+  }
+
+  /**
+   * @param {import('./forms.js').PieceDef} piece
+   * @param {number} originRow
+   * @param {number} originCol
+   */
+  function collectPieceCells(piece, originRow, originCol) {
+    /** @type {{ row: number, col: number }[]} */
+    const out = [];
+    const { rows, cols } = matrixSize(piece.matrix);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (piece.matrix[r][c]) out.push({ row: originRow + r, col: originCol + c });
+      }
+    }
+    return out;
+  }
+
+  function tickPlaceSnap() {
+    if (!placeSnap) return;
+    const now = performance.now();
+    if (now - placeSnap.start >= placeSnap.duration) {
+      placeSnap = null;
+      paint();
+      return;
+    }
+    paint();
+  }
+
   function paint() {
+    const nowMs = performance.now();
+    /** @type {number[][] | null} */
+    let cellOpacity = deathFx?.displayOpacity ?? null;
+    /** @type {null | { piece: any, frameX: number, frameY: number, scale: number, trayIndex?: number, alpha?: number }} */
+    let dragPaint = null;
+
+    if (deathFx) {
+      dragPaint = null;
+    } else if (drag) {
+      dragPaint = {
+        piece: drag.piece,
+        frameX: drag.frameX,
+        frameY: drag.frameY,
+        scale: drag.scale,
+        trayIndex: drag.trayIndex,
+      };
+    } else if (placeSnap) {
+      const dur = Math.max(1, placeSnap.duration);
+      const t = Math.min(1, Math.max(0, (nowMs - placeSnap.start) / dur));
+      // ease-out cubic：前快后稳，落位干脆
+      const e = 1 - (1 - t) ** 3;
+      dragPaint = {
+        piece: placeSnap.piece,
+        frameX: placeSnap.fromX + (placeSnap.toX - placeSnap.fromX) * e,
+        frameY: placeSnap.fromY + (placeSnap.toY - placeSnap.fromY) * e,
+        scale: 0.97 + 0.03 * e,
+        alpha: 0.92 + 0.08 * e,
+      };
+      // 落位中用 opacity=0 标记「隐藏格」；view 只关 visible，不改坏材质
+      if (!cellOpacity) {
+        cellOpacity = Array.from({ length: GRID }, () => Array(GRID).fill(1));
+      }
+      for (const hc of placeSnap.hideCells) {
+        if (hc.row >= 0 && hc.row < GRID && hc.col >= 0 && hc.col < GRID) {
+          cellOpacity[hc.row][hc.col] = 0;
+        }
+      }
+    }
+
     boardView.render({
       layout,
       cells: deathFx?.displayCells ?? grid.cells,
-      cellOpacity: deathFx?.displayOpacity ?? null,
+      cellOpacity,
       tray: deathFx ? [null, null, null] : tray,
-      drag:
-        deathFx || !drag
-          ? null
-          : {
-              piece: drag.piece,
-              frameX: drag.frameX,
-              frameY: drag.frameY,
-              scale: drag.scale,
-              trayIndex: drag.trayIndex,
-            },
-      hover: deathFx ? null : hover,
+      drag: dragPaint,
+      hover: deathFx || placeSnap ? null : hover,
       clearFx: deathFx ? null : clearFx,
-      nowMs: performance.now(),
+      nowMs,
     });
     syncHud();
   }
@@ -576,10 +664,24 @@ export function createGame(opts) {
     };
   }
 
+  /**
+   * @param {NonNullable<typeof clearFx>} payload
+   */
+  function enqueueClearFx(payload) {
+    if (clearFx) {
+      clearQueue.push(payload);
+      return;
+    }
+    clearFx = payload;
+    ghostHaptics.onClearFxStart?.();
+  }
+
   function finishClearFx() {
     if (!clearFx) return;
-    const { lines, cellsPlaced } = clearFx;
-    const linesCleared = grid.clearLines(lines);
+    const { lines, cellsPlaced, cells: clearCells } = clearFx;
+    // 只清本波快照格，整行 clearLines 会误伤消行中后放入的块
+    grid.clearExactCells(clearCells);
+    const linesCleared = lines?.count ?? 0;
     clearFx = null;
     // 不强制掐断连续震：时长由 FEEL_HAPTIC_CLEAR_FX_DURATION_MS 自管；
     // 仅 restart 时 onClearFxEnd 强制 stop。
@@ -593,6 +695,17 @@ export function createGame(opts) {
       fillTray();
     }
     checkGameOver();
+
+    // 队列中的下一波（后落子独立消除，不与上波混格）
+    if (clearQueue.length) {
+      const next = clearQueue.shift();
+      if (next) {
+        next.start = performance.now();
+        clearFx = next;
+        ghostHaptics.onClearFxStart?.();
+      }
+    }
+
     paint();
     updateStatus();
   }
@@ -604,7 +717,8 @@ export function createGame(opts) {
       finishClearFx();
       return;
     }
-    paint();
+    // 拖拽时由 tickDragFrame paint；仅清行时这里刷帧
+    if (!drag) paint();
   }
 
   function framePointFromClient(clientX, clientY) {
@@ -685,11 +799,8 @@ export function createGame(opts) {
   }
 
   function isLocked() {
-    return (
-      performance.now() < inputLockedUntil ||
-      clearFx != null ||
-      deathFx != null
-    );
+    // 消行 clearFx 不锁输入：可边消边拿下一块；仅 death / 短 reject 锁
+    return performance.now() < inputLockedUntil || deathFx != null;
   }
 
   function onPointerDown(e) {
@@ -758,29 +869,47 @@ export function createGame(opts) {
       );
       tray[active.trayIndex] = null;
 
+      // 视觉：从拖拽位快速吸附到目标格（逻辑已 place）
+      const to = placeOriginFrame(h.originRow, h.originCol);
+      const snapMs = Math.max(
+        0,
+        Number(getTune().FEEL_PLACE_SNAP_MS ?? FEEL_PLACE_SNAP_MS) || 0,
+      );
+      if (snapMs > 0) {
+        placeSnap = {
+          start: performance.now(),
+          duration: snapMs,
+          fromX: active.frameX,
+          fromY: active.frameY,
+          toX: to.x,
+          toY: to.y,
+          piece: active.piece,
+          hideCells: collectPieceCells(active.piece, h.originRow, h.originCol),
+        };
+      } else {
+        placeSnap = null;
+      }
+
       const lines = grid.findFullLines();
       if (lines.count > 0) {
-        // 消行动画 + 消除震动（1 瞬态 + 间隔 + 连续震）；结束后再清格/计分/刷 tray
-        {
-          const collected = collectLineCells(
-            lines,
-            active.piece.matrix,
-            h.originRow,
-            h.originCol,
-          );
-          clearFx = {
-            lines,
-            cells: collected.cells,
-            sweep: collected.sweep,
-            start: performance.now(),
-            duration: FEEL_CLEAR_MS,
-            cellsPlaced,
-          };
-          ghostHaptics.onClearFxStart?.();
-        }
-        lockInput(Math.max(FEEL_INPUT_LOCK_MS, FEEL_CLEAR_MS + 40));
+        // 消行演出；逻辑清格延后且仅清本波 cells。可立即再拿下一块。
+        const collected = collectLineCells(
+          lines,
+          active.piece.matrix,
+          h.originRow,
+          h.originCol,
+        );
+        enqueueClearFx({
+          lines,
+          cells: collected.cells,
+          sweep: collected.sweep,
+          start: performance.now(),
+          duration: FEEL_CLEAR_MS,
+          cellsPlaced,
+        });
+        // 不 lock：放下即可连拿；后落子不进本波 clear 格表
       } else {
-        lockInput(FEEL_COMMIT_MS);
+        // 无消行：立即计分，不锁输入
         scoreState.onPlace({
           cellsPlaced,
           linesCleared: 0,
@@ -793,6 +922,8 @@ export function createGame(opts) {
         checkGameOver();
       }
     } else {
+      // 未放下：短暂防误触（可选）；合法放下不锁
+      placeSnap = null;
       lockInput(FEEL_REJECT_MS);
     }
 
@@ -890,11 +1021,15 @@ export function createGame(opts) {
   let running = true;
   renderer.setAnimationLoop(() => {
     if (!running) return;
-    if (deathFx) tickDeathFx();
-    else if (drag) tickDragFrame();
-    else if (clearFx) tickClearFx();
-    // 碎裂粒子可活过 clearFx，需继续 paint 做重力
-    else if (boardView.hasActiveDebris?.()) paint();
+    if (deathFx) {
+      tickDeathFx();
+    } else {
+      // 消行 / 拖拽 / 落位吸附可并行
+      if (drag) tickDragFrame();
+      if (placeSnap) tickPlaceSnap();
+      if (clearFx) tickClearFx();
+      else if (!drag && !placeSnap && boardView.hasActiveDebris?.()) paint();
+    }
     renderer.render(scene, camera);
   });
 

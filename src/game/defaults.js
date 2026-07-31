@@ -360,30 +360,29 @@ export const FEEL_GAIN_SMOOTH_TIME = 0.018;
 /** 合法投影：本色半透；非法不显示投影 */
 export const FEEL_GHOST_ALPHA = 0.15;
 /**
- * 开阔区投影换格基础阈值（格）。本体跟手：默认半格中线，勿 &lt;0.45 以免影提前跳。
- * 见 docs/GHOST-DESIGN.md § 自适应。
+ * L_open：开阔区离开 sticky 的距离（格）。≈0.5 = 过两格中线。
+ * 设计：docs/GHOST-DESIGN.md §5–§6
  */
 export const FEEL_GHOST_OPEN_SNAP = 0.5;
 /**
- * 投影换格滞回基础（格）。半格量化防抖；宜小，保证「到格即切」。
+ * H_open：开阔施密特滞回半宽（格）。离开阈 = L_open+H_open，防格缝连闪。
+ * 建议 0.08～0.10；过大则横拖换格偏钝。
  */
-export const FEEL_GHOST_SNAP_HYST = 0.06;
-/** 滞回下限：再快也不完全取消防抖 */
-export const FEEL_GHOST_SNAP_HYST_MIN = 0.04;
+export const FEEL_GHOST_SNAP_HYST = 0.09;
+/** H_open 下限（快扫略收滞回仍不低于此） */
+export const FEEL_GHOST_SNAP_HYST_MIN = 0.07;
 /**
- * 邻格可放时对 open 的再乘。本体跟手默认 1（不再压低 open 提前换格）。
+ * @deprecated 设计收敛后 open 不再乘 corridor；保留键避免旧面板炸字段
  */
 export const FEEL_GHOST_OPEN_CORRIDOR_MUL = 1.0;
 /**
- * 卡边粘滞阈值（格）：邻格不可放时，本体相对 sticky 偏移超过该值才尝试换影。
- * 产品要求：卡边拖放幅度 &gt; 1.3 格才切换阴影。
+ * L_edge：卡边/堵住方向离开距离（格）。须拖约 1.3 格才换影。
  */
 export const FEEL_GHOST_EDGE_HOLD = 1.3;
-/** 卡边有效阈值下限；与 HOLD 同为 1.3，避免自适应压低 */
+/** L_edge 下限（不被速度压低） */
 export const FEEL_GHOST_EDGE_MIN = 1.3;
 /**
- * 影相对块 free 的最大切比雪夫距离（格）。
- * 须 &gt; EDGE_HOLD，否则卡边未达 1.3 就因 lag 灭影。
+ * MAX_LAG：影相对 free 最大切比雪夫距离。须 &gt; L_edge。
  */
 export const FEEL_GHOST_MAX_LAG = 1.45;
 /**
@@ -400,12 +399,11 @@ export const FEEL_GHOST_FAST_EXIT_RATIO = 0.55;
  */
 export const FEEL_AXIS_DOMINANCE = 0.05;
 /**
- * 斜向意图判定：min(|Δcol|,|Δrow|) / max ≥ 该值 → 视为斜移。
- * 斜移时抑制「先横后斜」的中间投影格。
+ * 斜向意图：min(|v_x|,|v_y|)/max ≥ 该值 → diag（只允许对角步进）。
  */
-export const FEEL_GHOST_DIAG_RATIO = 0.42;
+export const FEEL_GHOST_DIAG_RATIO = 0.45;
 /**
- * free 相对 sticky 的次轴分量（格）超过该值且主轴已达换格，仍压住纯单轴步进。
+ * @deprecated 设计收敛后由 intent=diag 单轴 leave→保持 sticky 取代；保留键兼容
  */
 export const FEEL_GHOST_DIAG_MINOR = 0.22;
 export const FEEL_DRAG_ALPHA = 0.95;
@@ -414,6 +412,11 @@ export const FEEL_PRECLEAR_HIGHLIGHT = true;
 export const FEEL_SNAP_ONLY_VALID = true;
 export const FEEL_COMMIT_MS = 90;
 export const FEEL_REJECT_MS = 180;
+/**
+ * 合法松手后：块从拖拽位置吸附到目标格的时长（ms）。
+ * 越小落位越快；0 = 无动画直接出现在格上。
+ */
+export const FEEL_PLACE_SNAP_MS = 42;
 /** 落子消行动画时长（ms）：自落子处向外依次收缩 → 清格 */
 export const FEEL_CLEAR_MS = 280;
 /** 消行错峰：时间轴前段用于按距离排序启动（0–1） */

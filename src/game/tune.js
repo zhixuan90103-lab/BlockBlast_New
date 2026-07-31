@@ -50,6 +50,7 @@ export function createDefaultTune() {
     FEEL_POINTER_GAIN_K: D.FEEL_POINTER_GAIN_K,
     FEEL_POINTER_DIST_REF: D.FEEL_POINTER_DIST_REF,
     FEEL_SMOOTH_TIME: D.FEEL_SMOOTH_TIME,
+    FEEL_PLACE_SNAP_MS: D.FEEL_PLACE_SNAP_MS,
     FEEL_GAIN_SMOOTH_TIME: D.FEEL_GAIN_SMOOTH_TIME,
     FEEL_DRAG_FOLLOW_GAIN_MAX: D.FEEL_DRAG_FOLLOW_GAIN_MAX,
     FEEL_BOARD_ENGAGE_OVERLAP: D.FEEL_BOARD_ENGAGE_OVERLAP,
@@ -425,6 +426,14 @@ export const TUNE_FIELDS = [
         max: 2.2,
         step: 0.05,
         format: (v) => `${v.toFixed(2)}×`,
+      },
+      {
+        key: 'FEEL_PLACE_SNAP_MS',
+        label: '落位吸附(ms)',
+        min: 0,
+        max: 120,
+        step: 2,
+        format: (v) => `${Math.round(v)}`,
       },
       {
         key: 'FEEL_SMOOTH_TIME',

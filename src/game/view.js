@@ -566,8 +566,24 @@ export function createBoardView(scene) {
         applyFilledCellScale(fill, 1);
         fill.rotation.z = 0;
         fill.position.set(slot.position.x, slot.position.y, 0.02);
+
+        // 落位吸附隐藏：只关 visible，勿把 material.opacity 打成 0
+        // （否则结束后易半透/缺 bevel，块样式「不完整」）
+        if (cellOp <= 0.001) {
+          setFillGroupOpacity(fill, 1);
+          fill.visible = false;
+          continue;
+        }
+
+        const wasHidden = fill.visible === false;
         fill.visible = true;
-        setFillGroupOpacity(fill, cellOp);
+        if (wasHidden || cellOp >= 0.999) {
+          // 重新露出或满不透明：按颜色钉死分层 opacity
+          recolorFilledCell(fill, v, 1);
+          if (cellOp < 0.999) setFillGroupOpacity(fill, cellOp);
+        } else {
+          setFillGroupOpacity(fill, cellOp);
+        }
         // 淡入时略放大→落定
         let animScale = 1;
         if (cellOp < 0.999 && cellOp > 0.02) {
@@ -1136,8 +1152,10 @@ export function createBoardView(scene) {
       );
     }
 
-    // 拖起后用棋盘 pitch + 棋盘 inset（满格）
+    // 拖起 / 落位吸附：棋盘 pitch + inset（满格）
     if (drag?.piece) {
+      const alpha =
+        typeof drag.alpha === 'number' ? drag.alpha : FEEL_DRAG_ALPHA;
       addPieceMeshes(
         drag.piece.matrix,
         drag.piece.cellColors || drag.piece.color,
@@ -1148,7 +1166,7 @@ export function createBoardView(scene) {
         frameW,
         frameH,
         drag.scale ?? 1,
-        FEEL_DRAG_ALPHA,
+        alpha,
         0.25,
       );
     }

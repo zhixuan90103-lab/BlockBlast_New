@@ -119,6 +119,31 @@ export function createGrid() {
     return rows.length + cols.length;
   }
 
+  /**
+   * 只清除给定格（落子消行动画结束用）。
+   * 不按「整行/列」扫盘，避免消行演出期间后放入的块被上一波 clear 误删。
+   * @param {{ row: number, col: number }[]} cellList
+   * @returns {number} 实际清空的格数
+   */
+  function clearExactCells(cellList) {
+    if (!cellList?.length) return 0;
+    let n = 0;
+    const seen = new Set();
+    for (const cell of cellList) {
+      const r = cell.row;
+      const c = cell.col;
+      if (!inBounds(r, c)) continue;
+      const k = `${r},${c}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      if (cells[r][c] != null) {
+        cells[r][c] = null;
+        n++;
+      }
+    }
+    return n;
+  }
+
   function isEmpty() {
     for (let r = 0; r < GRID; r++) {
       for (let c = 0; c < GRID; c++) {
@@ -160,6 +185,7 @@ export function createGrid() {
     findFullLines,
     previewClearLines,
     clearLines,
+    clearExactCells,
     isEmpty,
     canPlaceAnywhere,
     reset,
