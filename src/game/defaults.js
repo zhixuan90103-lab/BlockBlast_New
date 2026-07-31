@@ -399,6 +399,15 @@ export const FEEL_GHOST_FAST_EXIT_RATIO = 0.55;
  * 避免横向拖时竖直噪声让投影上下跳。
  */
 export const FEEL_AXIS_DOMINANCE = 0.05;
+/**
+ * 斜向意图判定：min(|Δcol|,|Δrow|) / max ≥ 该值 → 视为斜移。
+ * 斜移时抑制「先横后斜」的中间投影格。
+ */
+export const FEEL_GHOST_DIAG_RATIO = 0.42;
+/**
+ * free 相对 sticky 的次轴分量（格）超过该值且主轴已达换格，仍压住纯单轴步进。
+ */
+export const FEEL_GHOST_DIAG_MINOR = 0.22;
 export const FEEL_DRAG_ALPHA = 0.95;
 export const FEEL_PRECLEAR_HIGHLIGHT = true;
 /** true：仅合法可 commit；非法不显示投影；换格用 open/edge 双阈值 */

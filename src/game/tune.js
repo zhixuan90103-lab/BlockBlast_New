@@ -112,6 +112,8 @@ export function createDefaultTune() {
     FEEL_GHOST_FAST_SPEED_RATIO: D.FEEL_GHOST_FAST_SPEED_RATIO,
     FEEL_GHOST_FAST_EXIT_RATIO: D.FEEL_GHOST_FAST_EXIT_RATIO,
     FEEL_AXIS_DOMINANCE: D.FEEL_AXIS_DOMINANCE,
+    FEEL_GHOST_DIAG_RATIO: D.FEEL_GHOST_DIAG_RATIO,
+    FEEL_GHOST_DIAG_MINOR: D.FEEL_GHOST_DIAG_MINOR,
     /** 显示 tray 三等分区 */
     SHOW_TRAY_ZONES: D.SHOW_TRAY_ZONES,
     /** E2：1=单块 tray · 3=经典三块（可用 ?e2=1 覆盖） */
@@ -818,6 +820,22 @@ export const TUNE_FIELDS = [
         label: '轴向主导滞回',
         min: 0,
         max: 0.25,
+        step: 0.01,
+        format: (v) => v.toFixed(2),
+      },
+      {
+        key: 'FEEL_GHOST_DIAG_RATIO',
+        label: '斜向意图比例',
+        min: 0.25,
+        max: 0.85,
+        step: 0.01,
+        format: (v) => v.toFixed(2),
+      },
+      {
+        key: 'FEEL_GHOST_DIAG_MINOR',
+        label: '斜向次轴门槛',
+        min: 0.1,
+        max: 0.5,
         step: 0.01,
         format: (v) => v.toFixed(2),
       },

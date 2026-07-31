@@ -228,13 +228,50 @@ export function createGhostPolicy(deps) {
     return !!session.ghostFastMode;
   }
 
-  // —— 轴向意图 ——
+  // —— 轴向 / 斜向操作意图 ——
 
   /**
-   * free 吸附用的轴偏好（只比 Δcol/Δrow）。
-   * @returns {'h' | 'v' | 'both'}
+   * 指移 + free 位移综合：'h' | 'v' | 'diag' | 'both'
+   * @param {object} session
+   * @param {number} [freeColF]
+   * @param {number} [freeRowF]
+   */
+  function moveIntentClass(session, freeColF, freeRowF) {
+    const tune = getTune();
+    const diagRatio = Number.isFinite(tune.FEEL_GHOST_DIAG_RATIO)
+      ? tune.FEEL_GHOST_DIAG_RATIO
+      : 0.42;
+    const bias = tune.FEEL_AXIS_DOMINANCE ?? 0.05;
+
+    // 指移意图（格）
+    let ix = session.intentDx ?? 0;
+    let iy = session.intentDy ?? 0;
+    // free 相对 sticky 的位移（更贴本体）
+    if (session.sticky && Number.isFinite(freeColF) && Number.isFinite(freeRowF)) {
+      const fx = freeColF - session.sticky.col;
+      const fy = freeRowF - session.sticky.row;
+      ix = ix * 0.35 + fx * 0.65;
+      iy = iy * 0.35 + fy * 0.65;
+    }
+    const ac = Math.abs(ix);
+    const ar = Math.abs(iy);
+    if (ac < 0.04 && ar < 0.04) return 'both';
+    const ratio = Math.min(ac, ar) / Math.max(ac, ar, 1e-6);
+    if (ratio >= diagRatio) return 'diag';
+    if (ac > ar + bias) return 'h';
+    if (ar > ac + bias) return 'v';
+    return 'both';
+  }
+
+  /**
+   * free 吸附用的轴偏好。
+   * @returns {'h' | 'v' | 'both' | 'diag'}
    */
   function preferredSnapAxis(session, freeColF, freeRowF) {
+    const intent = moveIntentClass(session, freeColF, freeRowF);
+    if (intent === 'diag') return 'diag';
+    if (intent === 'h' || intent === 'v') return intent;
+
     if (session.sticky) {
       const s = session.sticky;
       const dCol = Math.abs(freeColF - s.col);
@@ -250,10 +287,15 @@ export function createGhostPolicy(deps) {
   }
 
   /**
-   * sticky 步进轴锁（近距；过大则双轴）。
-   * @returns {'h' | 'v' | 'both'}
+   * sticky 步进轴锁（近距；过大则双轴；斜移强制 both）。
+   * @returns {'h' | 'v' | 'both' | 'diag'}
    */
   function resolveDominantAxis(session, freeColF, freeRowF, s) {
+    const intent = moveIntentClass(session, freeColF, freeRowF);
+    if (intent === 'diag') {
+      session.axisLock = null;
+      return 'diag';
+    }
     const dCol = Math.abs(freeColF - s.col);
     const dRow = Math.abs(freeRowF - s.row);
     if (dCol > AXIS_BOTH_LAG || dRow > AXIS_BOTH_LAG) {
@@ -263,11 +305,11 @@ export function createGhostPolicy(deps) {
     const bias = getTune().FEEL_AXIS_DOMINANCE;
     const prev = session.axisLock;
 
-    if (dCol > dRow + bias) {
+    if (intent === 'h' || dCol > dRow + bias) {
       session.axisLock = 'h';
       return 'h';
     }
-    if (dRow > dCol + bias) {
+    if (intent === 'v' || dRow > dCol + bias) {
       session.axisLock = 'v';
       return 'v';
     }
@@ -275,8 +317,16 @@ export function createGhostPolicy(deps) {
     return 'both';
   }
 
-  /** 邻格相对轴向意图的惩罚（越大越不优先） */
+  /**
+   * 邻格相对操作意图的惩罚（越大越不优先）。
+   * 斜移时强罚纯横/纯竖，避免「先横移影再斜移影」。
+   */
   function axisNeighborPenalty(dr, dc, axis) {
+    if (axis === 'diag') {
+      if (dr !== 0 && dc !== 0) return 0;
+      if (dr !== 0 || dc !== 0) return 6;
+      return 0;
+    }
     if (axis === 'h') {
       if (dr === 0 && dc !== 0) return 0;
       if (dr !== 0 && dc !== 0) return 1;
@@ -287,14 +337,34 @@ export function createGhostPolicy(deps) {
       if (dr !== 0 && dc !== 0) return 1;
       if (dc !== 0 && dr === 0) return 4;
     }
-    return 0;
+    // both：斜向略优先于纯轴
+    if (dr !== 0 && dc !== 0) return 0;
+    return 1;
+  }
+
+  /** 候选步是否与指移/free 方向相反 */
+  function againstMoveIntent(session, freeColF, freeRowF, r, c, sticky) {
+    if (!sticky) return false;
+    const dr = r - sticky.row;
+    const dc = c - sticky.col;
+    if (dr === 0 && dc === 0) return false;
+    let ix = session.intentDx ?? 0;
+    let iy = session.intentDy ?? 0;
+    const fx = freeColF - sticky.col;
+    const fy = freeRowF - sticky.row;
+    ix = ix * 0.3 + fx * 0.7;
+    iy = iy * 0.3 + fy * 0.7;
+    // 与主位移方向点积为负 → 逆行
+    if (dc !== 0 && ix * dc < -0.02) return true;
+    if (dr !== 0 && iy * dr < -0.02) return true;
+    return false;
   }
 
   // —— free 邻域吸附 ——
 
   /**
-   * free 附近合法格；lag ≤ MAX_LAG；轴意图优先同轴邻格。
-   * @param {'h' | 'v' | 'both'} [preferredAxis]
+   * free 附近合法格；lag ≤ MAX_LAG；按操作方向过滤候选。
+   * @param {'h' | 'v' | 'both' | 'diag'} [preferredAxis]
    */
   function hoverFreeSnap(
     session,
@@ -321,15 +391,40 @@ export function createGhostPolicy(deps) {
     } else if (preferredAxis === 'v' && sticky) {
       col = sticky.col;
       row = quantizeWithHyst(freeRowF, sticky.row, h);
+    } else if (preferredAxis === 'diag' && sticky) {
+      // 斜移：双轴独立半格量化，优先对角目标，不锁单轴
+      col = quantizeWithHyst(freeColF, sticky.col, h);
+      row = quantizeWithHyst(freeRowF, sticky.row, h);
     }
 
     const tryAt = (r, c) => {
       if (r < 0 || c < 0 || r > maxRow || c > maxCol) return null;
       if (lagToCell(freeColF, freeRowF, r, c) > maxLag) return null;
       if (!grid.fits(matrix, r, c)) return null;
+      if (againstMoveIntent(session, freeColF, freeRowF, r, c, sticky)) {
+        return null;
+      }
       session.sticky = { row: r, col: c };
       return makeValidHover(r, c, matrix);
     };
+
+    // 斜移时：若量化结果是纯横/竖中间格，先尝试对角
+    if (
+      preferredAxis === 'diag' &&
+      sticky &&
+      (row === sticky.row) !== (col === sticky.col)
+    ) {
+      const dCol = freeColF - sticky.col;
+      const dRow = freeRowF - sticky.row;
+      const preferC = sticky.col + (dCol >= 0 ? 1 : -1);
+      const preferR = sticky.row + (dRow >= 0 ? 1 : -1);
+      const diagHit = tryAt(preferR, preferC);
+      if (diagHit) return diagHit;
+      // 对角暂不可放：保持 sticky，避免跳到纯横中间影
+      if (lagToCell(freeColF, freeRowF, sticky.row, sticky.col) <= maxLag) {
+        return makeValidHover(sticky.row, sticky.col, matrix);
+      }
+    }
 
     let hit = tryAt(row, col);
     if (hit) return hit;
@@ -339,15 +434,35 @@ export function createGhostPolicy(deps) {
     for (let dr = -1; dr <= 1; dr++) {
       for (let dc = -1; dc <= 1; dc++) {
         if (dr === 0 && dc === 0) continue;
-        const r = row + dr;
-        const c = col + dc;
-        const lag = lagToCell(freeColF, freeRowF, r, c);
-        if (lag > maxLag) continue;
-        candidates.push([r, c, lag, axisNeighborPenalty(dr, dc, preferredAxis)]);
+        const r = (sticky?.row ?? row) + dr;
+        const c = (sticky?.col ?? col) + dc;
+        // 也扫量化点邻域
+        const r2 = row + dr;
+        const c2 = col + dc;
+        for (const [rr, cc] of [
+          [r, c],
+          [r2, c2],
+        ]) {
+          const lag = lagToCell(freeColF, freeRowF, rr, cc);
+          if (lag > maxLag) continue;
+          if (againstMoveIntent(session, freeColF, freeRowF, rr, cc, sticky)) {
+            continue;
+          }
+          candidates.push([
+            rr,
+            cc,
+            lag,
+            axisNeighborPenalty(rr - (sticky?.row ?? row), cc - (sticky?.col ?? col), preferredAxis),
+          ]);
+        }
       }
     }
     candidates.sort((a, b) => a[3] - b[3] || a[2] - b[2]);
+    const seen = new Set();
     for (const [r, c] of candidates) {
+      const k = `${r},${c}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
       hit = tryAt(r, c);
       if (hit) return hit;
     }
@@ -410,22 +525,60 @@ export function createGhostPolicy(deps) {
     const axis = resolveDominantAxis(session, freeColF, freeRowF, s);
     const th = adaptiveThresholds(session, matrix, s.row, s.col);
     const h = th.hyst;
+    const tune = getTune();
+    const diagMinor = Number.isFinite(tune.FEEL_GHOST_DIAG_MINOR)
+      ? tune.FEEL_GHOST_DIAG_MINOR
+      : 0.22;
     let targetCol = s.col;
     let targetRow = s.row;
 
-    // open 方向阈值已含半格语义；卡边方向 th=1.3 不再叠加 hyst，避免实际 >1.3 才动
+    // open 方向阈值已含半格语义；卡边方向 th=1.3 不再叠加 hyst
     const colStepR = th.right >= 1.0 ? th.right : th.right + h;
     const colStepL = th.left >= 1.0 ? th.left : th.left + h;
     const rowStepD = th.down >= 1.0 ? th.down : th.down + h;
     const rowStepU = th.up >= 1.0 ? th.up : th.up + h;
 
-    if (axis === 'h' || axis === 'both') {
+    // 斜移或 both：双轴都可步进；纯 h/v 只动主轴
+    const allowH = axis === 'h' || axis === 'both' || axis === 'diag';
+    const allowV = axis === 'v' || axis === 'both' || axis === 'diag';
+
+    if (allowH) {
       if (freeColF >= s.col + colStepR) targetCol = s.col + 1;
       else if (freeColF <= s.col - colStepL) targetCol = s.col - 1;
     }
-    if (axis === 'v' || axis === 'both') {
+    if (allowV) {
       if (freeRowF >= s.row + rowStepD) targetRow = s.row + 1;
       else if (freeRowF <= s.row - rowStepU) targetRow = s.row - 1;
+    }
+
+    const dCol = freeColF - s.col;
+    const dRow = freeRowF - s.row;
+    const movedCol = targetCol !== s.col;
+    const movedRow = targetRow !== s.row;
+    const intent = moveIntentClass(session, freeColF, freeRowF);
+
+    // 斜向意图：仅一轴跨阈时压住纯横/竖中间步，等对角或 free 重吸
+    if (
+      (intent === 'diag' || axis === 'diag') &&
+      movedCol !== movedRow
+    ) {
+      const minor = movedCol ? Math.abs(dRow) : Math.abs(dCol);
+      if (minor >= diagMinor) {
+        // 次轴已有分量：强制目标对角，不先横
+        if (movedCol && !movedRow) {
+          targetRow = s.row + (dRow >= 0 ? 1 : -1);
+        } else if (movedRow && !movedCol) {
+          targetCol = s.col + (dCol >= 0 ? 1 : -1);
+        }
+      } else {
+        // 次轴还太小：保持当前影
+        return gateByMaxLag(
+          session,
+          freeColF,
+          freeRowF,
+          makeValidHover(s.row, s.col, matrix),
+        );
+      }
     }
 
     if (targetCol === s.col && targetRow === s.row) {
@@ -437,15 +590,37 @@ export function createGhostPolicy(deps) {
       );
     }
 
-    const candidates = [
-      [targetRow, targetCol],
-      [s.row, targetCol],
-      [targetRow, s.col],
-    ];
+    // 候选顺序：斜移只先对角；非斜移才回退纯轴
+    /** @type {[number, number][]} */
+    let candidates;
+    if (intent === 'diag' || axis === 'diag') {
+      candidates = [
+        [targetRow, targetCol],
+        // 对角不可放时再试 free 邻域，不优先纯横/竖
+      ];
+    } else if (axis === 'h') {
+      candidates = [
+        [s.row, targetCol],
+        [targetRow, targetCol],
+      ];
+    } else if (axis === 'v') {
+      candidates = [
+        [targetRow, s.col],
+        [targetRow, targetCol],
+      ];
+    } else {
+      candidates = [
+        [targetRow, targetCol],
+        [s.row, targetCol],
+        [targetRow, s.col],
+      ];
+    }
+
     for (const [r, c] of candidates) {
       if (r === s.row && c === s.col) continue;
       if (!grid.fits(matrix, r, c)) continue;
       if (lagToCell(freeColF, freeRowF, r, c) > maxLag) continue;
+      if (againstMoveIntent(session, freeColF, freeRowF, r, c, s)) continue;
       session.sticky = { row: r, col: c };
       return gateByMaxLag(
         session,
@@ -470,6 +645,7 @@ export function createGhostPolicy(deps) {
       );
     }
 
+    // 斜移失败：优先 free 吸附（仍带方向惩罚），勿先横后竖
     return freeSnapGated(session, freeColF, freeRowF, matrix, snapAxis);
   }
 

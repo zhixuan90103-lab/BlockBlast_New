@@ -50,6 +50,9 @@ export function createDragSession(opts) {
     smoothLastT: now,
     smoothGain: 1,
     lastPointerSpeed: 0,
+    /** 平滑后的指移意图（格/帧量级，Y 向下为正） */
+    intentDx: 0,
+    intentDy: 0,
     ghostFastMode: false,
     snapVisualOnce: true,
     extraLiftCells: 0,
@@ -156,6 +159,13 @@ export function samplePointer(session, fx, fy, layout, getTune) {
   session.lastPointerSpeed = speedCells;
   session.fingerFx = fx;
   session.fingerFy = fy;
+
+  // 操作方向：EMA 平滑，供投影过滤横/竖中间格
+  const idx = dx / cell;
+  const idy = dy / cell;
+  const a = 0.35;
+  session.intentDx = (session.intentDx ?? 0) * (1 - a) + idx * a;
+  session.intentDy = (session.intentDy ?? 0) * (1 - a) + idy * a;
 
   // 设计：抬升 travel 只计上移（docs/GHOST-DESIGN.md §3）。横移不计，避免 free 上移导致影横跳。
   const upCells = Math.max(0, (session.startFy - fy) / cell);
