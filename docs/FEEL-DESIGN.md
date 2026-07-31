@@ -271,34 +271,32 @@ flash  →  fill  →  pause  →  reveal  →  game-over visible
 
 ## 10. 投影（Ghost）— 设计摘要
 
-> **完整规格 SSOT**：[GHOST-DESIGN.md](./GHOST-DESIGN.md)  
-> 实现：`feel/ghost-policy.js` · 抬升 / 意图 `feel/drag-session.js` · 绘制 `view.js`
+> **完整方法 SSOT**：[GHOST-DESIGN.md](./GHOST-DESIGN.md)（含检索依据、8 向、反查表）  
+> 实现：`feel/ghost-policy.js` · 抬升 `feel/drag-session.js` · 绘制 `view.js`
 
-### 产品目标
+### 方法一句话
 
-**跟本体** · **跟方向** · 居中稳定 · 卡边粘 · 不甩影 · 仅合法。
+**8 向步进 + 空地 0.5 / 卡边 1.3 + 施密特防抖（不闪优先）+ 失败钉住 / 过远灭影**；影跟本体 free。
 
-### 流水线（每帧，摘要）
+### 流水线（摘要）
 
-1. 底排 engage → 否则无影  
-2. 视觉 origin → **free**（本体想落点）  
-3. **开阔**：约半格过中线才换格（跟本体，不提前钉）  
-4. **卡边**（邻格不可放）：拖过 **1.3 格** 才尝试换影  
-5. **斜拖**：对角优先；抑制「先横后斜」中间影（`intentDx/Dy` + `DIAG_*`）  
-6. 抬升**只计上移**；`lag > MAX_LAG` → 灭影  
+1. engage → free（本体底排）  
+2. sticky 空/非法 → 首次 ±1 钉格  
+3. 主方向 ∈ 8 邻；空地 L+H≈**0.62**、卡边 **1.3** 才 leave  
+4. 斜向：横竖都过阈 → 一次对角；假斜向走主轴  
+5. 目标 !fits → 保持；lag>MAX → 灭影  
 
 ### 关键出厂（摘录）
 
-| 常量 | 含义 / 出厂方向 |
-|------|-----------------|
-| `FEEL_GHOST_OPEN_SNAP` | 开阔半格（**0.5**） |
-| `FEEL_GHOST_EDGE_HOLD` | 卡边 **1.3** |
-| `FEEL_GHOST_MAX_LAG` | 影-块最远（**1.45**，须 > EDGE） |
-| `FEEL_GHOST_DIAG_RATIO` / `MINOR` | 斜向判定 / 次轴门槛 |
-| `FEEL_GHOST_SNAP_HYST` | 小滞回防抖 |
-| `FEEL_AXIS_DOMINANCE` | 横竖主导 |
+| 常量 | 出厂 | 角色 |
+|------|------|------|
+| `OPEN_SNAP` | 0.5 | L_open |
+| `SNAP_HYST` | **0.12** | H_open（不闪） |
+| `EDGE_HOLD` | **1.3** | L_edge |
+| `MAX_LAG` | 1.45 | 须 > edge |
+| `DIAG_RATIO` | 0.45 | 进入四对角 |
 
-两种阴影：盘上 **落点投影**（ghost-policy）≠ tray **扁影**（`addTrayPieceShadow`）。渲染池化见 [PROJECT-HISTORY §14](./PROJECT-HISTORY.md)。
+两种阴影：落点投影 ≠ tray 扁影。池化见 HISTORY §14。
 
 ---
 

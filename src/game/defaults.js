@@ -360,17 +360,17 @@ export const FEEL_GAIN_SMOOTH_TIME = 0.018;
 /** 合法投影：本色半透；非法不显示投影 */
 export const FEEL_GHOST_ALPHA = 0.15;
 /**
- * L_open：开阔区离开 sticky 的距离（格）。≈0.5 = 过两格中线。
- * 设计：docs/GHOST-DESIGN.md §5–§6
+ * L_open：不卡边时沿 8 向离开距离（格）。0.5 = 约过中线。
+ * 斜向：横、竖各自都要达到该阈（+ H_open）。
  */
 export const FEEL_GHOST_OPEN_SNAP = 0.5;
 /**
- * H_open：开阔施密特滞回半宽（格）。离开阈 = L_open+H_open，防格缝连闪。
- * 建议 0.08～0.10；过大则横拖换格偏钝。
+ * H_open：空地防抖半宽。离开 = L_open+H_open。
+ * 产品：防抖不能闪，优先稳（略粘可接受）。
  */
-export const FEEL_GHOST_SNAP_HYST = 0.09;
-/** H_open 下限（快扫略收滞回仍不低于此） */
-export const FEEL_GHOST_SNAP_HYST_MIN = 0.07;
+export const FEEL_GHOST_SNAP_HYST = 0.12;
+/** H_open 下限 */
+export const FEEL_GHOST_SNAP_HYST_MIN = 0.1;
 /**
  * @deprecated 设计收敛后 open 不再乘 corridor；保留键避免旧面板炸字段
  */
