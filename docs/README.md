@@ -75,5 +75,5 @@
 | **触控清理**（双指/双击/放大镜） | ENTRYPOINTS · HISTORY §13 | `touch-hygiene.js` · BridgeViewController |
 | **摆放区高度**中心固定 · 默认 7 | FEEL §11 · HISTORY §13 | `layout.js` · `LAYOUT_TRAY_BAND_CELLS` |
 | 出厂标定（增益 1.35 · 影 lag 1.3 · tray Y） | HISTORY §13 · defaults.js | 见 §13 表 |
-| **投影系统设计**（跟本体 · 卡边 · 斜向） | **[GHOST-DESIGN.md](./GHOST-DESIGN.md)** · HISTORY **§14** | `ghost-policy` · `drag-session` |
+| **投影：Bug→设计重构** | **[GHOST-DESIGN.md](./GHOST-DESIGN.md)** §一 · HISTORY **§16** | `ghost-policy` 8 向流水线 |
 | **渲染对象池 / 阴影透明** | HISTORY §14 · ENGINEERING | `view.js` · `block-mesh.js` |

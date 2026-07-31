@@ -271,32 +271,33 @@ flash  →  fill  →  pause  →  reveal  →  game-over visible
 
 ## 10. 投影（Ghost）— 设计摘要
 
-> **完整方法 SSOT**：[GHOST-DESIGN.md](./GHOST-DESIGN.md)（含检索依据、8 向、反查表）  
-> 实现：`feel/ghost-policy.js` · 抬升 `feel/drag-session.js` · 绘制 `view.js`
+> **SSOT**：[GHOST-DESIGN.md](./GHOST-DESIGN.md)（§一 Bug→设计 · §四流水线 · 验收）  
+> **演进笔记**：[PROJECT-HISTORY.md](./PROJECT-HISTORY.md) §16  
+> 实现：`ghost-policy.js` · `drag-session.js` · `view.js`
 
 ### 方法一句话
 
-**8 向步进 + 空地 0.5 / 卡边 1.3 + 施密特防抖（不闪优先）+ 失败钉住 / 过远灭影**；影跟本体 free。
+**8 向 + 空地 0.5/卡边 1.3 + 防闪滞回 + 斜向可先单轴一格 + 失败钉住/过远灭影**；影跟本体 free。
 
-### 流水线（摘要）
+### 从补丁到设计（极简）
 
-1. engage → free（本体底排）  
-2. sticky 空/非法 → 首次 ±1 钉格  
-3. 主方向 ∈ 8 邻；空地 L+H≈**0.62**、卡边 **1.3** 才 leave  
-4. 斜向：横竖都过阈 → 一次对角；假斜向走主轴  
-5. 目标 !fits → 保持；lag>MAX → 灭影  
+| 旧补丁 | 终态设计 |
+|--------|----------|
+| open/hyst/settle 互殴 | 单流水线 + 有角色参数 |
+| 斜向双轴门闩 → 影落后 | 方案 1：可先横/竖 |
+| 时间锁防闪 | 施密特 H（不闪优先） |
+| 失败 freeSnap | 只钉住 / MAX_LAG 灭影 |
 
-### 关键出厂（摘录）
+### 出厂（摘录）
 
-| 常量 | 出厂 | 角色 |
-|------|------|------|
-| `OPEN_SNAP` | 0.5 | L_open |
-| `SNAP_HYST` | **0.12** | H_open（不闪） |
-| `EDGE_HOLD` | **1.3** | L_edge |
-| `MAX_LAG` | 1.45 | 须 > edge |
-| `DIAG_RATIO` | 0.45 | 进入四对角 |
+| 角色 | 常量 | 值 |
+|------|------|-----|
+| L_open | OPEN_SNAP | 0.5 |
+| H_open | SNAP_HYST | 0.12 |
+| L_edge | EDGE_HOLD | 1.3 |
+| MAX_LAG | MAX_LAG | 1.45 |
 
-两种阴影：落点投影 ≠ tray 扁影。池化见 HISTORY §14。
+落点投影 ≠ tray 扁影。池化见 HISTORY §14。
 
 ---
 

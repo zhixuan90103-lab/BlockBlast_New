@@ -297,63 +297,25 @@ export function createGhostPolicy(deps) {
     return makeValidHover(best.r, best.c, matrix);
   }
 
-  // —— 主入口 ——
+  // —— 步进：纯轴 / 斜向（对齐 GHOST-DESIGN §四）——
 
-  /**
-   * @param {object} session
-   * @param {number} originX
-   * @param {number} originY
-   * @param {number[][]} matrix
-   */
-  function resolve(session, originX, originY, matrix) {
-    if (!isBoardEngaged(originX, originY, matrix)) {
-      clearSticky(session);
-      return null;
-    }
-
-    const { freeColF, freeRowF } = freeSnapFromShapeBottom(
-      originX,
-      originY,
-      matrix,
-    );
-    const maxLag = maxLagCells();
-    const hOpen = H_open();
-
-    if (!session.sticky) {
-      return firstPin(session, freeColF, freeRowF, matrix);
-    }
-
-    const s = session.sticky;
-    const lag = lagToCell(freeColF, freeRowF, s.row, s.col);
-
-    if (!grid.fits(matrix, s.row, s.col)) {
-      clearSticky(session);
-      return firstPin(session, freeColF, freeRowF, matrix);
-    }
-
-    if (lag > maxLag) {
-      clearSticky(session);
-      return null;
-    }
-
-    const dx = freeColF - s.col;
-    const dy = freeRowF - s.row;
-    const dir = primary8Dir(dx, dy, hOpen);
-
-    // 仍在中心附近 → 钉住（防闪）
-    if (!dir) {
+  /** 纯横/竖：整向 leave 够 → 切一格 */
+  function stepCardinal(
+    session,
+    freeColF,
+    freeRowF,
+    s,
+    dc,
+    dr,
+    matrix,
+    hOpen,
+    maxLag,
+  ) {
+    if (!canLeaveToward(freeColF, freeRowF, s, dc, dr, matrix, hOpen)) {
       return makeValidHover(s.row, s.col, matrix);
     }
-
-    const { dc, dr } = dir;
-    const isDiag = dc !== 0 && dr !== 0;
-
-    // —— 纯横/竖：整向够才切一格 ——
-    if (!isDiag) {
-      if (!canLeaveToward(freeColF, freeRowF, s, dc, dr, matrix, hOpen)) {
-        return makeValidHover(s.row, s.col, matrix);
-      }
-      const hit = tryCommit(
+    return (
+      tryCommit(
         session,
         freeColF,
         freeRowF,
@@ -361,12 +323,26 @@ export function createGhostPolicy(deps) {
         s.row + dr,
         s.col + dc,
         maxLag,
-      );
-      return hit || makeValidHover(s.row, s.col, matrix);
-    }
+      ) || makeValidHover(s.row, s.col, matrix)
+    );
+  }
 
-    // —— 斜向（产品方案 1）：允许中间态 ——
-    // 双轴都够 → 优先对角；仅一轴够 → 可先横或先竖挪一格（更跟手）
+  /**
+   * 斜向（方案 1）：双轴够 → 优先对角；仅一轴够 → 先横/竖一格中间态。
+   */
+  function stepDiagonal(
+    session,
+    freeColF,
+    freeRowF,
+    s,
+    dc,
+    dr,
+    dx,
+    dy,
+    matrix,
+    hOpen,
+    maxLag,
+  ) {
     const leaveC = canLeaveAxis(
       freeColF,
       s.col,
@@ -392,24 +368,18 @@ export function createGhostPolicy(deps) {
       return makeValidHover(s.row, s.col, matrix);
     }
 
-    /** @type {[number, number][]} 按优先级尝试的目标 */
+    /** @type {[number, number][]} */
     const targets = [];
     if (leaveC && leaveR) {
-      // 1) 对角
       targets.push([s.row + dr, s.col + dc]);
-      // 2) 对角失败时：较强轴先单步（仍属中间态兜底）
       if (Math.abs(dx) >= Math.abs(dy)) {
-        targets.push([s.row, s.col + dc]);
-        targets.push([s.row + dr, s.col]);
+        targets.push([s.row, s.col + dc], [s.row + dr, s.col]);
       } else {
-        targets.push([s.row + dr, s.col]);
-        targets.push([s.row, s.col + dc]);
+        targets.push([s.row + dr, s.col], [s.row, s.col + dc]);
       }
     } else if (leaveC) {
-      // 仅横够：先横移一格
       targets.push([s.row, s.col + dc]);
     } else {
-      // 仅竖够：先竖移一格
       targets.push([s.row + dr, s.col]);
     }
 
@@ -418,6 +388,89 @@ export function createGhostPolicy(deps) {
       if (hit) return hit;
     }
     return makeValidHover(s.row, s.col, matrix);
+  }
+
+  // —— 主入口（设计 §四 流水线 1–9）——
+
+  /**
+   * @param {object} session
+   * @param {number} originX
+   * @param {number} originY
+   * @param {number[][]} matrix
+   */
+  function resolve(session, originX, originY, matrix) {
+    // 1. engage
+    if (!isBoardEngaged(originX, originY, matrix)) {
+      clearSticky(session);
+      return null;
+    }
+
+    // 2. free（本体）
+    const { freeColF, freeRowF } = freeSnapFromShapeBottom(
+      originX,
+      originY,
+      matrix,
+    );
+    const maxLag = maxLagCells();
+    const hOpen = H_open();
+
+    // 3. sticky 空 → firstPin
+    if (!session.sticky) {
+      return firstPin(session, freeColF, freeRowF, matrix);
+    }
+
+    const s = session.sticky;
+    const lag = lagToCell(freeColF, freeRowF, s.row, s.col);
+
+    // 3b. sticky 非法 → firstPin
+    if (!grid.fits(matrix, s.row, s.col)) {
+      clearSticky(session);
+      return firstPin(session, freeColF, freeRowF, matrix);
+    }
+
+    // 4. lag 过大 → 灭影
+    if (lag > maxLag) {
+      clearSticky(session);
+      return null;
+    }
+
+    // 5–6. 8 向主方向；中心死区 → 保持
+    const dx = freeColF - s.col;
+    const dy = freeRowF - s.row;
+    const dir = primary8Dir(dx, dy, hOpen);
+    if (!dir) {
+      return makeValidHover(s.row, s.col, matrix);
+    }
+
+    const { dc, dr } = dir;
+
+    // 7–8. 纯轴 or 斜向（方案 1 中间态）
+    if (dc === 0 || dr === 0) {
+      return stepCardinal(
+        session,
+        freeColF,
+        freeRowF,
+        s,
+        dc,
+        dr,
+        matrix,
+        hOpen,
+        maxLag,
+      );
+    }
+    return stepDiagonal(
+      session,
+      freeColF,
+      freeRowF,
+      s,
+      dc,
+      dr,
+      dx,
+      dy,
+      matrix,
+      hOpen,
+      maxLag,
+    );
   }
 
   return {
