@@ -376,13 +376,17 @@ export const FEEL_GHOST_SNAP_HYST_MIN = 0.1;
  */
 export const FEEL_GHOST_OPEN_CORRIDOR_MUL = 1.0;
 /**
- * L_edge：卡边/堵住方向离开距离（格）。须拖约 1.3 格才换影。
+ * L_board：贴**棋盘外沿**（一步会出界）离开距离（格）。
  */
 export const FEEL_GHOST_EDGE_HOLD = 1.3;
-/** L_edge 下限（不被速度压低） */
+/** L_board 下限 */
 export const FEEL_GHOST_EDGE_MIN = 1.3;
 /**
- * MAX_LAG：影相对 free 最大切比雪夫距离。须 &gt; L_edge。
+ * L_block：盘**内**被其它块堵住时离开距离（格）。产品：盘中卡边约 1 格。
+ */
+export const FEEL_GHOST_BLOCK_HOLD = 1.0;
+/**
+ * MAX_LAG：影相对 free 最大切比雪夫距离。须 &gt; max(L_board, L_block)。
  */
 export const FEEL_GHOST_MAX_LAG = 1.45;
 /**

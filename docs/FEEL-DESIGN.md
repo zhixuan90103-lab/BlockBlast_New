@@ -277,7 +277,7 @@ flash  →  fill  →  pause  →  reveal  →  game-over visible
 
 ### 方法一句话
 
-**8 向 + 空地 0.5/卡边 1.3 + 防闪滞回 + 斜向可先单轴一格 + 失败钉住/过远灭影**；影跟本体 free。
+**8 向 + 空地 0.5 / 盘内贴块 1.0 / 棋盘外沿 1.3 + 防闪 + 斜向可先单轴 + 失败钉住/过远灭影**；影跟本体 free。
 
 ### 从补丁到设计（极简）
 
@@ -294,7 +294,8 @@ flash  →  fill  →  pause  →  reveal  →  game-over visible
 |------|------|-----|
 | L_open | OPEN_SNAP | 0.5 |
 | H_open | SNAP_HYST | 0.12 |
-| L_edge | EDGE_HOLD | 1.3 |
+| L_block | BLOCK_HOLD | 1.0 盘内贴块 |
+| L_board | EDGE_HOLD | 1.3 棋盘外沿 |
 | MAX_LAG | MAX_LAG | 1.45 |
 
 落点投影 ≠ tray 扁影。池化见 HISTORY §14。

@@ -2,11 +2,10 @@
  * 投影策略 — 设计 SSOT：docs/GHOST-DESIGN.md
  *
  * 统一规则（产品拍板）：
- * - 不卡边（目标邻格能放）：沿该向约 0.5 格 + 滞回 → 换影
- * - 卡边（该向邻格不能放）：约 1.3 格才尝试离开（仍不落到非法格）
- * - 方向看 8 邻：E/W/N/S + 四对角
- * - 斜向：双轴都够 → 优先对角；仅一轴够 → 允许先横或先竖挪一格（中间态，跟手）
- * - 防抖优先：格缝不闪（H_open 足够）；失败只保持 sticky，不邻域乱吸
+ * - 空地：约 0.5 + H → 换影
+ * - 盘内贴块：约 1.0 格才尝试离开
+ * - 棋盘外沿：约 1.3 格才尝试离开
+ * - 8 向；斜向可先单轴一格；失败钉住；不闪优先
  */
 import { FEEL_PRECLEAR_HIGHLIGHT, GRID } from '../defaults.js';
 import { matrixSize } from '../forms.js';
@@ -87,7 +86,7 @@ export function createGhostPolicy(deps) {
     return { freeColF, freeRowF, bottomR };
   }
 
-  // —— 参数：L_open / H_open / L_edge / MAX_LAG ——
+  // —— 参数：L_open / H_open / L_block / L_board / MAX_LAG ——
 
   function maxLagCells() {
     const v = getTune().FEEL_GHOST_MAX_LAG;
@@ -115,8 +114,8 @@ export function createGhostPolicy(deps) {
     return Math.max(hMin, base);
   }
 
-  /** 卡边离开距离 1.3 */
-  function L_edge() {
+  /** 棋盘外沿离开距离 1.3 */
+  function L_board() {
     const tune = getTune();
     const edge = Number.isFinite(tune.FEEL_GHOST_EDGE_HOLD)
       ? tune.FEEL_GHOST_EDGE_HOLD
@@ -127,7 +126,13 @@ export function createGhostPolicy(deps) {
     return Math.max(edgeMin, edge);
   }
 
-  function H_edge() {
+  /** 盘内贴块离开距离 1.0 */
+  function L_block() {
+    const v = getTune().FEEL_GHOST_BLOCK_HOLD;
+    return Number.isFinite(v) ? Math.max(0.5, v) : 1.0;
+  }
+
+  function H_blocked() {
     return 0.04;
   }
 
@@ -145,6 +150,34 @@ export function createGhostPolicy(deps) {
 
   function canStep(matrix, row, col, dRow, dCol) {
     return grid.fits(matrix, row + dRow, col + dCol);
+  }
+
+  /**
+   * 一步后失败原因：open | board（出界）| block（盘内叠块）
+   * @returns {'open' | 'board' | 'block'}
+   */
+  function leaveKind(matrix, row, col, dRow, dCol) {
+    const tr = row + dRow;
+    const tc = col + dCol;
+    if (grid.fits(matrix, tr, tc)) return 'open';
+    const { rows, cols } = matrixSize(matrix);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (!matrix[r][c]) continue;
+        const gr = tr + r;
+        const gc = tc + c;
+        if (gr < 0 || gc < 0 || gr >= GRID || gc >= GRID) return 'board';
+      }
+    }
+    return 'block';
+  }
+
+  /** @returns {{ L: number, H: number }} */
+  function leaveLH(matrix, sRow, sCol, dRow, dCol, hOpen) {
+    const kind = leaveKind(matrix, sRow, sCol, dRow, dCol);
+    if (kind === 'open') return { L: L_open(), H: hOpen };
+    if (kind === 'board') return { L: L_board(), H: H_blocked() };
+    return { L: L_block(), H: H_blocked() };
   }
 
   function clearSticky(session) {
@@ -201,16 +234,15 @@ export function createGhostPolicy(deps) {
   }
 
   /**
-   * 单轴是否已拖够离开距离（open 0.5+H / edge 1.3+H）。
+   * 单轴是否已拖够离开距离。
+   * 空地 0.5+H · 盘内贴块 1.0 · 棋盘外沿 1.3
    * @param {boolean} isCol true=列轴(dc)，false=行轴(dr)
    */
   function canLeaveAxis(freeF, sAxis, d, matrix, sRow, sCol, isCol, hOpen) {
     if (d === 0) return false;
-    const open = isCol
-      ? canStep(matrix, sRow, sCol, 0, d)
-      : canStep(matrix, sRow, sCol, d, 0);
-    const L = open ? L_open() : L_edge();
-    const H = open ? hOpen : H_edge();
+    const dRow = isCol ? 0 : d;
+    const dCol = isCol ? d : 0;
+    const { L, H } = leaveLH(matrix, sRow, sCol, dRow, dCol, hOpen);
     if (d > 0 && freeF < sAxis + L + H) return false;
     if (d < 0 && freeF > sAxis - L - H) return false;
     return true;
