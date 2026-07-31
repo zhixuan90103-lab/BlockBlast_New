@@ -14,9 +14,9 @@
 |------|------|
 | 1 | 本文件 + [docs/README.md](./docs/README.md) |
 | 2 手感/消行/震动/死亡/布局 | [docs/FEEL-DESIGN.md](./docs/FEEL-DESIGN.md) |
-| 2b **投影** | **[docs/GHOST-DESIGN.md](./docs/GHOST-DESIGN.md)**（稳定/轴意图/死区） |
+| 2b **投影** | **[docs/GHOST-DESIGN.md](./docs/GHOST-DESIGN.md)**（跟本体 · 卡边 1.3 · 斜向过滤） |
 | 3 发块 | **[docs/DEAL-PUSH-COMPLETE.md](./docs/DEAL-PUSH-COMPLETE.md)**（SSOT；[DEAL-DESIGN](./docs/DEAL-DESIGN.md) 仅摘要） |
-| 4 踩坑 / 项目笔记 | [docs/PROJECT-HISTORY.md](./docs/PROJECT-HISTORY.md)（**§13** 设置 UI·触控·摆放区） |
+| 4 踩坑 / 项目笔记 | [docs/PROJECT-HISTORY.md](./docs/PROJECT-HISTORY.md)（最新 **§14** 池化·投影） |
 | 5 底座 | [docs/ENGINEERING.md](./docs/ENGINEERING.md) · [docs/ENTRYPOINTS.md](./docs/ENTRYPOINTS.md) |
 
 **常量真源**：`src/game/defaults.js`（不要只信 RUNTIME-DEFAULTS 摘录）。
@@ -58,9 +58,9 @@ npm run ios:bootstrap
 4. 交互 UI 在 `#hud`；3D 在 `#stage`；**死亡闪红 / 全屏结算 / 设置面板** 在 `#phone-frame` 内。  
 5. **业务震动曲线**写在 `feel/haptics-ghost.js`，原生层只提供 transient/continuous API。  
 6. 改布局尺寸：同步 `viewport.js` DESIGN_* 与 CSS 393/852（若仍用设计框）。  
-7. 圆角几何：BufferGeometry + clone；共享模板勿 dispose。  
+7. 圆角几何：**共享** BufferGeometry（`sharedTemplate` 勿 dispose）；filled/ghost/debris 走对象池；tray 扁影材质每帧新建以保证半透明。  
 8. **仅主指针拖块**（`isPrimary`）；禁系统双指缩放 / 双击放大 / 长按菜单。  
-9. 文档：改手感/消行/死亡/震动/布局 UI → 更新 **FEEL-DESIGN** + **PROJECT-HISTORY**；改发块 → **DEAL-PUSH-COMPLETE**；入口 DOM → **ENTRYPOINTS**。
+9. 文档：改手感/消行/死亡/震动/布局 UI → **FEEL-DESIGN** + **PROJECT-HISTORY**；改投影 → **GHOST-DESIGN** + HISTORY；改发块 → **DEAL-PUSH-COMPLETE**；入口 DOM → **ENTRYPOINTS**。
 
 ## DOM
 

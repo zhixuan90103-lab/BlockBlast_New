@@ -1,7 +1,7 @@
 # Block Blast 项目实现与问题纪要
 
-> 整理日期：**2026-07-31**（续 §13）  
-> 范围：研究冻结 → DEFAULTS → M0–M2 → 视觉/手感 → feel 拆分 → 消行/震动/屏震/debris → 死亡 → 发块 Intent → **设置 UI · 触控 · 摆放区几何**  
+> 整理日期：**2026-07-31**（续 **§14**）  
+> 范围：… → 设置 UI · 触控 · 摆放区 → **渲染对象池 · 投影跟本体/卡边/斜向过滤**  
 > 工程根目录：`three-webgpu-cap-shell/`（Git：`zhixuan90103-lab/BlockBlast_New`）  
 > 研究材料：仓库上级 `../research/`（多数不在 shell 的 git 内）
 
@@ -11,6 +11,7 @@
 |------|------|
 | [README.md](./README.md) | **文档索引与规范** |
 | [FEEL-DESIGN.md](./FEEL-DESIGN.md) | 手感问题 → 不变量（P1–P24，含消行/震动/死亡/布局区） |
+| [GHOST-DESIGN.md](./GHOST-DESIGN.md) | **投影 SSOT**（跟本体 · 卡边 · 斜向） |
 | [DEAL-PUSH-COMPLETE.md](./DEAL-PUSH-COMPLETE.md) | **发块完整规格 SSOT** |
 | [DEAL-DESIGN.md](./DEAL-DESIGN.md) | 发块短摘要（指针） |
 | [ENGINEERING.md](./ENGINEERING.md) | 底座、Capacitor、WebGPU、安全区 |
@@ -95,7 +96,7 @@ docs/                     # 见 docs/README.md 索引
 
 - `game.js`：状态与事件编排（含 clearFx / deathFx），不堆投影公式。
 - `feel/*`：可单测的手感策略，不碰 mesh 创建。
-- `view.js`：空槽常驻 + 填充层 + 消行缩转 + debris + 屏震；`block-mesh` 圆角 **BufferGeometry + clone**。
+- `view.js`：空槽常驻 + 填充层 + 消行缩转 + debris + 屏震；`block-mesh` 圆角 **共享 BufferGeometry** + **filled/ghost/debris 对象池**（见 §14）。
 - `defaults.js` ↔ `tune.js` ↔ `feel-panel` / `feel-presets`：一处默认、运行时覆盖、预设槽。
 
 ---
@@ -571,3 +572,84 @@ BridgeViewController
 | 盘面因子 | 邻格 `fits` → corridor 更灵；否则 edge≥EDGE_MIN |
 | 滞回下限 | `SNAP_HYST_MIN` 防快扫再闪 |
 | 代码 | `ghost-policy.adaptiveThresholds` |
+
+---
+
+## 14. 渲染对象池 · 投影跟本体 / 卡边 / 斜向（2026-07-31）
+
+> 提交：`2f4f04e`（池化 + 影透明 + 跟本体/卡边）· `4e907b9`（斜向方向过滤）  
+> 设计 SSOT：投影 → [GHOST-DESIGN.md](./GHOST-DESIGN.md)；手感摘要 → FEEL-DESIGN §10
+
+### 14.1 问题 → 修改
+
+| 现象 | 原因 | 修改 |
+|------|------|------|
+| 拖动时卡顿 / 频繁 new dispose | 每帧重建 tray/ghost/debris mesh | `block-mesh`：`acquire/releaseFilledCell`；共享圆角几何；debris 单位平面 + scale；dynamic 回收分池 |
+| 盘面/tray 重影、游离紫块 | 阴影 BufferGeometry 脏复用、bounding 不刷新 | tray 扁影：**每帧新建 geo+material**（数量 ≤3）；`clearList` 兜底清 `dynamicRoot` 孤儿 |
+| 阴影/投影看起来不透明 | 池化材质 `transparent` 切换后 WebGPU 仍走不透明通道 | 扁影不池化材质；ghost 独立池 + `needsUpdate` / `forceSinglePass` |
+| 影「提前到格」，块还在半路 | sticky open≈0.28 提前步进 | **本体 free 驱动**；开阔 **OPEN=0.5** 半格切换 |
+| 卡边一点就挤影 | edge 阈值过低或被速度压低 | **EDGE_HOLD=EDGE_MIN=1.3**；`MAX_LAG=1.45`（> edge） |
+| 斜拖先横影再斜影 | 单轴先跨阈 → 候选先纯横/竖 | `intentDx/Dy` + `DIAG_RATIO/MINOR`；斜移对角优先、压单轴中间步 |
+
+### 14.2 架构补充
+
+```
+block-mesh.js
+  geoCache（sharedTemplate）· filledPool
+  acquireFilledCell / releaseFilledCell / recolorFilledCell / applyFilledCellScale
+
+view.js
+  ghostCellPool（与盘面 filled 隔离）
+  tray 扁影：acquireShadowMesh 每次新 geo+mat，release 全 dispose
+  debris：单位 Plane 池 + scale
+  clearList → 回收 + 清空 dynamicRoot 残留子节点
+
+drag-session.js
+  intentDx / intentDy（指移 EMA）→ 投影方向过滤
+
+ghost-policy.js
+  open 半格 · edge 1.3 · moveIntentClass(h/v/diag)
+  斜移：对角候选优先；againstMoveIntent 滤逆行
+```
+
+### 14.3 出厂默认摘要（投影相关，以 defaults.js 为准）
+
+| 常量 | 值 |
+|------|-----|
+| `FEEL_GHOST_OPEN_SNAP` / `CORRIDOR_MUL` | 0.5 / 1.0 |
+| `FEEL_GHOST_SNAP_HYST` / `MIN` | 0.06 / 0.04 |
+| `FEEL_GHOST_EDGE_HOLD` / `MIN` | 1.3 / 1.3 |
+| `FEEL_GHOST_MAX_LAG` | 1.45 |
+| `FEEL_GHOST_DIAG_RATIO` / `MINOR` | 0.42 / 0.22 |
+| `FEEL_GHOST_ALPHA` | 0.15 |
+
+### 14.4 决策
+
+| 决策 | 原因 |
+|------|------|
+| 投影跟 **本体 free**，不「预瞄」前方格 | 玩家反馈：影应随块到位再切 |
+| 卡边硬阈值 1.3，且不被速度乘低 | 贴边/堵住要明显粘，避免误挤 |
+| 斜向单独意图类 | 消除「先横后斜」中间态 |
+| tray 扁影不池化材质 | 数量极少；透明在 WebGPU 上最稳 |
+| ghost 与 board fill **分池** | 半透明不污染实心块 |
+
+### 14.5 文档同步（本轮）
+
+| 文档 | 动作 |
+|------|------|
+| [GHOST-DESIGN.md](./GHOST-DESIGN.md) | 重写：跟本体 · 卡边 1.3 · 斜向过滤 · 参数表 · 验收 |
+| [FEEL-DESIGN.md](./FEEL-DESIGN.md) §10/§11 | 摘要对齐；调参表补斜向 |
+| [RUNTIME-DEFAULTS.md](./RUNTIME-DEFAULTS.md) | 投影表与 defaults 对齐 |
+| [docs/README.md](./README.md) | 近期主题 §14 |
+| [AGENTS.md](../AGENTS.md) | 几何共享 + 池约定；笔记指向 §14 |
+| 本节 **§14** | 项目笔记正文 |
+
+### 14.6 验收（真机）
+
+1. 开阔拖：影跟块，过中线才换格，无明显「影先到」。  
+2. 卡边/贴占格：需拖约 1.3 格量级才换影。  
+3. 左上/右上等斜拖：无稳定「先横一格再斜」中间影。  
+4. tray 扁影半透明、贴块、无游离紫块。  
+5. 长时间拖动无明显分配卡顿（池化）。  
+
+改投影：**先改 GHOST-DESIGN，再改 `ghost-policy` / `drag-session` / defaults**。

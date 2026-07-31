@@ -37,16 +37,19 @@
 | `FEEL_HAPTIC_GHOST_COOLDOWN_MS` | **48** |
 | 波3 连续 | 40ms · 0.25→0.1 · 锐 0.06→0 |
 
-## 投影（设计见 [GHOST-DESIGN.md](./GHOST-DESIGN.md)）
+## 投影（设计见 [GHOST-DESIGN.md](./GHOST-DESIGN.md) · 笔记 §14）
 
-| 常量 | 值 |
-|------|-----|
-| `FEEL_GHOST_MAX_LAG` | **1.3** |
-| `FEEL_GHOST_OPEN_SNAP` | **0.30** |
-| `FEEL_GHOST_SNAP_HYST` | **0.14**（居中防抖） |
-| `FEEL_GHOST_FAST_SPEED_RATIO` | **0.38** |
-| `FEEL_GHOST_EDGE_HOLD` | 1.3 |
-| `FEEL_GHOST_ALPHA` | 0.15 |
+| 常量 | 值 | 备注 |
+|------|-----|------|
+| `FEEL_GHOST_ALPHA` | 0.15 | 落点投影透明度 |
+| `FEEL_GHOST_OPEN_SNAP` | **0.5** | 开阔半格跟本体 |
+| `FEEL_GHOST_OPEN_CORRIDOR_MUL` | **1.0** | 不压低 open |
+| `FEEL_GHOST_SNAP_HYST` / `MIN` | **0.06** / **0.04** | 小滞回 |
+| `FEEL_GHOST_EDGE_HOLD` / `MIN` | **1.3** / **1.3** | 卡边换影幅度 |
+| `FEEL_GHOST_MAX_LAG` | **1.45** | 须 > EDGE |
+| `FEEL_GHOST_DIAG_RATIO` | **0.42** | 斜向判定 |
+| `FEEL_GHOST_DIAG_MINOR` | **0.22** | 斜向次轴门槛 |
+| `FEEL_GHOST_FAST_SPEED_RATIO` | 0.36 | 快精 |
 
 ## 布局 / tray
 

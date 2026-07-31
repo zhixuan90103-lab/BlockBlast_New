@@ -1,9 +1,9 @@
 # 投影（Ghost）系统设计
 
-> **SSOT**：行为以 `src/game/feel/ghost-policy.js` + `drag-session.js` 抬升为准。  
+> **SSOT**：行为以 `src/game/feel/ghost-policy.js` + `drag-session.js` 为准。  
 > 常量真源：`src/game/defaults.js`（`FEEL_GHOST_*` · `FEEL_AXIS_*` · 抬升相关）。  
-> 本文把真机迭代中的「现象修补」固化为**可预期产品规则**，不再当零散 BUG 列表。  
-> 关联：[FEEL-DESIGN.md](./FEEL-DESIGN.md) · [PROJECT-HISTORY.md](./PROJECT-HISTORY.md) §13.6–§13.7
+> 渲染：`view.js` 只画合法 ghost / tray 阴影，**不决定格坐标**。  
+> 关联：[FEEL-DESIGN.md](./FEEL-DESIGN.md) · [PROJECT-HISTORY.md](./PROJECT-HISTORY.md) §13–§14
 
 ---
 
@@ -11,136 +11,170 @@
 
 | 目标 | 含义 |
 |------|------|
-| **跟手** | 影子落在「块想去的位置」附近，跟手指移动方向一致 |
+| **跟本体** | 影子由**块的视觉位置**驱动；本体过格中线才换格，不「影先到格」 |
+| **跟方向** | 斜拖优先对角格；抑制「先横再斜」的中间投影 |
 | **稳定** | 停在格子中间时影子不左右连闪 |
-| **不甩影** | 影子不能离块太远（像影飞到另一边） |
+| **卡边粘** | 邻格不可放时，需拖够 **1.3 格** 才尝试换影 |
+| **不甩影** | 影相对 free 切比雪夫距离 ≤ `FEEL_GHOST_MAX_LAG`，否则灭影 |
 | **只合法** | 非法格不画影；松手只在 `fits` 时落子 |
-| **横竖意图** | 横拖时优先左右换格，不因抬升/噪声误跳到上下格 |
+| **横竖意图** | 横拖优先左右；竖拖优先上下；抬升不因横移误抬 |
 
-历史问题（已并入规则，不再单独当「未修 bug」）：
+历史问题（已并入规则）：
 
 | 旧现象 | 现规则 |
 |--------|--------|
-| 横拖投影上跳 | 抬升**仅**计手指上移；横意图 free 吸附优先同排 |
-| 居中左右连闪 | 半格**死区 + 滞回**；sticky 量化不用裸 `Math.round` |
-| 影飞太远 | 切比雪夫 lag ≤ `FEEL_GHOST_MAX_LAG` 否则灭影 |
+| 横拖投影上跳 | 抬升**仅**计手指上移 |
+| 居中左右连闪 | 半格量化 + 小滞回；禁止裸 `Math.round` 踩线 |
+| 影飞太远 | lag > `MAX_LAG` → 灭影（不钳盘边救命） |
+| 影提前钉格 / open=0.28 | 开阔 **0.5 半格** 跟本体 |
+| 斜拖先出横影再斜影 | 操作方向过滤 + 对角优先（§4.5） |
+| 卡边一点就挤过去 | `EDGE_HOLD = 1.3`（§4.1） |
 
 ---
 
 ## 2. 概念
 
 ```
-手指位移 ──► drag-session（积分 + 抬升）──► 块视觉 origin (frameX/Y)
+手指位移 ──► drag-session（积分 + 抬升 + intentDx/Dy）──► 块视觉 origin
                                               │
                                               ▼
-                              free (浮点格坐标 freeColF/freeRowF)
-                              = 形状底排中心映射到盘面的「想落点」
+                              free (浮点格) = 形状底排 → 想落点
                                               │
+                     ┌────────────────────────┼────────────────────────┐
+                     ▼                        ▼                        ▼
+              开阔：半格换格           卡边：≥1.3 格换格           斜向：对角优先
+                     └────────────────────────┼────────────────────────┘
                                               ▼
-                              sticky (整数 originRow/Col) ──► 合法投影格
+                              sticky (整数 origin) ──► view 画合法投影
 ```
 
 | 名词 | 定义 |
 |------|------|
-| **free** | 由视觉 origin + 形状底排算出的**浮点**目标原点（可在两格之间） |
-| **sticky** | 当前钉住的**整数**投影原点；换格带滞回 |
-| **lag** | free 与 sticky 的切比雪夫距离（格）`max(∣Δcol∣,∣Δrow∣)` |
-| **engage** | 形状**最底一排**与棋盘矩形有重叠才显示投影 |
-| **open / edge** | 邻格可放 → 开阔换格阈值；邻格不可放 → 边缘粘滞阈值（更难挤过去） |
+| **free** | 视觉 origin + 形状**最底一排**中心 → 浮点目标原点 |
+| **sticky** | 当前钉住的整数投影原点 |
+| **lag** | `max(∣freeCol−col∣, ∣freeRow−row∣)` |
+| **engage** | 底排与棋盘矩形重叠才显示投影（`FEEL_BOARD_ENGAGE_OVERLAP`，默认 0） |
+| **open** | 该方向邻格 `fits` → 换格阈值约 **半格** |
+| **edge / 卡边** | 该方向邻格不可放 → 阈值 **1.3 格** |
+| **intent** | `intentDx/Dy`（指移 EMA）+ free 相对 sticky → `h` / `v` / `diag` |
+
+两种「阴影」勿混：
+
+| 名称 | 代码 | 含义 |
+|------|------|------|
+| **落点投影** | `addBoardGhost` / ghost-policy | 拖到盘上的合法预览格（半透明块） |
+| **Tray 扁影** | `addTrayPieceShadow` | 摆放区块脚下轮廓影（深色半透明 mesh） |
 
 ---
 
 ## 3. 与抬升的边界（drag-session）
 
-投影 free 来自**视觉块位置**，故抬升会改变 free 的行。
+投影 free 来自**视觉块位置**，抬升会改变 free 的行。
 
-**产品规则：抬升行程只统计「相对拿起点的上移」。**
+**产品规则：抬升 travel 只统计「相对拿起点的上移」。**
 
-- 横移、斜移的水平分量**不**计入抬升 travel。  
-- 否则横拖会把块抬高 → free 上移 → 投影像「往上跳」（已否定的旧行为）。
+- 横移、斜移的水平分量**不**计入抬升。  
+- 相关：`FEEL_DRAG_OFFSET_Y_MIN/MAX` · `FEEL_DRAG_LIFT_TRAVEL_CELLS` · `FEEL_DRAG_LIFT_POWER`。
 
-相关：`FEEL_DRAG_OFFSET_Y_MIN/MAX` · `FEEL_DRAG_LIFT_TRAVEL_CELLS` · `FEEL_DRAG_LIFT_POWER`。
+**操作方向**：每帧 `samplePointer` 更新
+
+```text
+intentDx/Dy ← EMA(本帧指移 / cell)
+```
+
+供 ghost-policy 做斜向过滤（§4.5）。
 
 ---
 
 ## 4. 决策流水线（resolve）
 
-每帧顺序（实现与文档对齐）：
-
 ```
 1. 未 engage → 无影，清 sticky
-2. 算 free
-3. 有 sticky 且 lag > MAX_LAG → free 邻域吸附（或 null）
-4. 快速模式 或 lag 很大 → free 邻域吸附
-5. 无 sticky → free 邻域吸附，建立 sticky
-6. sticky 当前格不 fits → 清 sticky，free 吸附
-7. 【死区】|free−sticky| 横竖均 < 0.5+HYST → 强制钉 sticky（居中稳定）
-8. lag 较大且已离开死区 → free 重吸
-9. 否则 sticky 步进：轴锁 + open/edge + HYST
-10. 步进失败且朝向挡住 → 贴边粘滞（仍 ≤ MAX_LAG）
-11. 否则 free 吸附兜底
-12. 全程 gate：lag > MAX_LAG → 灭影
+2. 算 free（本体底排）
+3. 无 sticky → free 邻域吸附建立 sticky
+4. lag > MAX_LAG 或 sticky 非法 → free 重吸
+5. 快精且 lag 偏大 → free 重吸
+6. 各向「钉住」判定：
+     开阔方向：|Δ| < 0.5+hyst → 保持
+     卡边方向：|Δ| < EDGE(1.3) → 保持
+7. 已超方向阈值 → sticky 步进（open/edge + 方向过滤）
+8. 步进失败 → free 吸附兜底（仍带方向惩罚）
+9. 全程 gate：lag > MAX_LAG → 灭影
 ```
 
-### 4.1 死区 + 滞回（稳定核心）
+### 4.1 开阔 vs 卡边阈值
+
+| 方向邻格 | 阈值（相对 sticky，格） | 玩家感受 |
+|----------|-------------------------|----------|
+| **可放 (open)** | ≈ `OPEN_SNAP`(0.5) + 小 hyst | 本体过中线，影马上切 |
+| **不可放 (edge)** | `EDGE_HOLD` = **1.3**（= EDGE_MIN，不被速度压低） | 卡边要拖够才换影 |
+
+`MAX_LAG` 须 **> EDGE_HOLD**（出厂 1.45），否则未拖满 1.3 就灭影。
+
+### 4.2 半格量化 + 滞回
 
 | 参数 | 作用 |
 |------|------|
-| `FEEL_GHOST_OPEN_SNAP` | 开阔方向「走出多远才想换格」（约半格） |
-| `FEEL_GHOST_EDGE_HOLD` | 不可放方向更难挤过去 |
-| `FEEL_GHOST_SNAP_HYST` | **滞回**：在 open/edge 上再加一段，避免半格处来回踩线 |
+| `FEEL_GHOST_OPEN_SNAP` | 开阔基础（出厂 **0.5**） |
+| `FEEL_GHOST_SNAP_HYST` / `MIN` | 防抖；宜小以保证「到格即切」 |
+| `quantizeWithHyst` | sticky 存在时：跨 `±(0.5+h)` 才 ±1 格 |
 
-**死区**：`|freeCol−sticky.col| < 0.5+HYST` 且行同理 → 本帧不换格。  
-**量化**：有 sticky 时 `quantizeWithHyst`，禁止在 `n.5` 用 `Math.round` 抖  n↔n+1。
+禁止：在半格处用裸 `Math.round` 导致 n↔n+1 连闪。
 
-玩家感受：停在格子中间，影子**钉住**；明显再往左/右，才换邻格。
-
-### 4.2 轴向意图
+### 4.3 轴向意图
 
 | 场景 | 规则 |
 |------|------|
-| sticky 步进 | `FEEL_AXIS_DOMINANCE`：横差明显锁横轴，竖差锁竖轴 |
-| free 邻域吸附 | 横意图：优先同排左右，斜向次之，纯竖最后；可钉 sticky 行只找列 |
-| free 相对 sticky | `preferredSnapAxis`：只比 Δcol/Δrow，不因 lag 大就放弃轴偏好 |
+| sticky 步进 | `FEEL_AXIS_DOMINANCE`；横/竖差明显锁主轴 |
+| free 邻域 | 横意图优先同排；竖意图优先同列 |
+| 斜意图 | 见 §4.5，**不**锁死成纯 h/v |
 
-### 4.3 快 / 慢 + 自适应灵敏度（2026-07-31）
+### 4.4 快 / 慢
 
 | 模式 | 条件 | 行为 |
 |------|------|------|
-| 快精 | 指速 ≥ `SPEED_REF × FAST_SPEED_RATIO`（退出有滞回） | 直接 free 邻域吸附，少贴边 |
-| 慢贴 | 否则且靠近 sticky | 自适应 open/edge + 死区 + 轴锁步进 |
+| 快精 | 指速 ≥ `SPEED_REF × FAST_SPEED_RATIO` | 更易 free 重吸 |
+| 慢贴 | 否则 | open/edge 钉住 + sticky 步进 |
 
-**自适应因子**（`adaptiveThresholds`，叠在基础 open/edge/hyst 上）：
+开阔 open 有下限（~0.48），**禁止**再被乘到 0.1 导致影提前跳。
 
-| 因子 | 规则 |
+### 4.5 操作方向过滤（斜拖）
+
+| 规则 | 说明 |
 |------|------|
-| **速度 T∈[0,1]** | 指速 / 快精进入速；慢→阈值略升、滞回略升；快→阈值降、滞回降（≥`HYST_MIN`） |
-| **盘面邻格** | 意图方向 `fits` → open×`OPEN_CORRIDOR_MUL`（更灵）；不可放 → edge（≥`EDGE_MIN`，快时略松） |
-| **死区缩放** | 快扫 `deadzoneScale` 略 &lt;1，避免快拖仍被钉死 |
+| 意图类 | `moveIntentClass`：`h` / `v` / `diag` / `both`（指移 EMA + free 位移） |
+| `FEEL_GHOST_DIAG_RATIO` | min/max 轴分量比 ≥ 该值 → **diag**（出厂 0.42） |
+| `FEEL_GHOST_DIAG_MINOR` | 斜移时次轴至少该分量才强制对角（出厂 0.22） |
+| 斜移步进 | 仅一轴跨阈且次轴仍小 → **保持 sticky**（不出横/竖中间影） |
+| 斜移候选 | **先对角**；对角不可放 → 保持或 free 重吸；强罚纯横/竖邻格 |
+| 逆行过滤 | 与 intent/free 方向点积为负的候选丢弃 |
 
-验收：快扫及时跟；空旷慢拖也贴手；贴边/缝不乱跳、不肉。
+验收：左上/右上等斜拖时，影应贴近斜向目标，不应先横移一格再斜切。
 
-### 4.4 Max lag（不甩影）
+### 4.6 Max lag
 
-`chebyshev(free, ghostOrigin) > FEEL_GHOST_MAX_LAG` → 投影 null。  
-**禁止**把 free 钳回盘边「救命」（会把影吸到远处格）。
+`chebyshev(free, sticky) > FEEL_GHOST_MAX_LAG` → 投影 null。  
+**禁止** free 钳盘边「救命」。
 
 ---
 
-## 5. 出厂参数（摘要，以 defaults 为准）
+## 5. 出厂参数（摘要，以 defaults.js 为准）
 
-| 常量 | 典型默认 | 产品含义 |
-|------|----------|----------|
-| `FEEL_GHOST_OPEN_SNAP` | **0.28** | 开阔基础 |
-| `FEEL_GHOST_OPEN_CORRIDOR_MUL` | **0.82** | 可放方向再灵敏 |
-| `FEEL_GHOST_SNAP_HYST` / `MIN` | **0.14** / **0.06** | 滞回基础 / 下限 |
-| `FEEL_GHOST_EDGE_HOLD` / `MIN` | **1.15** / **0.55** | 堵住粘滞 / 不卡死 |
-| `FEEL_GHOST_MAX_LAG` | **1.3** | 影离块最远 |
-| `FEEL_GHOST_FAST_*` | **0.36** / 0.55 | 快精与速度顶满 |
-| `FEEL_AXIS_DOMINANCE` | 0.05 | 横竖轴判定 |
+| 常量 | 出厂 | 产品含义 |
+|------|------|----------|
+| `FEEL_GHOST_ALPHA` | 0.15 | 合法投影透明度 |
+| `FEEL_GHOST_OPEN_SNAP` | **0.5** | 开阔半格跟本体 |
+| `FEEL_GHOST_OPEN_CORRIDOR_MUL` | **1.0** | 不再压低 open |
+| `FEEL_GHOST_SNAP_HYST` / `MIN` | **0.06** / **0.04** | 小滞回 |
+| `FEEL_GHOST_EDGE_HOLD` / `MIN` | **1.3** / **1.3** | 卡边 1.3 格 |
+| `FEEL_GHOST_MAX_LAG` | **1.45** | 须 > EDGE |
+| `FEEL_GHOST_DIAG_RATIO` | **0.42** | 斜向判定 |
+| `FEEL_GHOST_DIAG_MINOR` | **0.22** | 斜向次轴门槛 |
+| `FEEL_GHOST_FAST_*` | 0.36 / 0.55 | 快精 |
+| `FEEL_AXIS_DOMINANCE` | 0.05 | 横竖主导 |
 | 抬升 | 仅上移 travel | 横拖不抬块 |
 
-调参面板分组「投影」：开阔换格阈值 · **换格滞回(防抖)** · 边缘粘滞 · 影-块最大距离 · 快精 · 轴向主导。
+调参面板「操作手感·投影」：开阔阈值 · 滞回 · 边缘粘滞 · 影-块距离 · 快精 · 轴向 · **斜向比例 / 次轴门槛**。
 
 ---
 
@@ -148,27 +182,28 @@
 
 | 文件 | 职责 |
 |------|------|
-| `feel/ghost-policy.js` | engage · free · sticky · 死区/滞回 · 轴 · maxLag · preclear 数据 |
-| `feel/drag-session.js` | 拿起、指速增益、积分、**抬升（仅上移）**、视觉平滑 |
-| `feel/haptics-ghost.js` | 换格震 / 将消 / 消除 3 波（不读格子几何） |
-| `view.js` | 画合法 ghost；不决定格坐标 |
-| `game.js` | 每帧 `ghostPolicy.resolve`；松手 `fits` commit |
+| `feel/ghost-policy.js` | engage · free · sticky · open/edge · 方向过滤 · maxLag · preclear |
+| `feel/drag-session.js` | 拿起、增益、积分、**抬升（仅上移）**、`intentDx/Dy`、视觉平滑 |
+| `feel/haptics-ghost.js` | 换格震 / 将消 / 消除 3 波 |
+| `view.js` | 画 ghost 与 tray 扁影；对象池见 HISTORY §14 |
+| `game.js` | 每帧 `resolve`；松手 `fits` commit |
 
 ---
 
-## 7. 验收清单（设计回归）
+## 7. 验收清单
 
-1. **横拖**：投影主要左右移动，不因横移整体上跳。  
-2. **居中停住**：影子不连续左右闪（可微抖块，影应钉住）。  
-3. **明显横移**：过死区后投影换到邻列。  
-4. **甩太远**：块快速拉开，影灭而非飞到远处合法格。  
-5. **贴边慢拖**：朝不可放方向不易误挤；可放方向仍跟手。  
-6. **快滑**：能跟上；停稳后回到慢速粘滞，不无故抖。
+1. **横拖**：影主要左右；不因横移整体上跳。  
+2. **居中停住**：影不左右连闪。  
+3. **本体过中线（开阔）**：影及时切邻格。  
+4. **卡边**：未拖满约 1.3 格影不轻易挤走。  
+5. **斜拖**（左上/右上等）：无「先横后斜」中间影；对角优先。  
+6. **甩太远**：影灭，不飞到远处合法格。  
+7. **快滑**：能跟上；停稳后回粘滞。
 
 ---
 
 ## 8. 演进约定
 
-- 改投影行为：先改本文 §1–§4 与 `defaults` 注释，再改 `ghost-policy` / `drag-session`。  
-- 真机新现象：优先判断是「参数」还是「违反 §1 目标」；违反则改规则表，勿只堆 if。  
-- 禁止恢复：横移计入抬升、`Math.round` 半格无滞回、free 钳盘边救命。  
+- 改投影行为：先改本文 §1–§5 与 `defaults` 注释，再改 `ghost-policy` / `drag-session`。  
+- 真机新现象：优先判断「参数」还是「违反 §1」；违反则改规则表。  
+- **禁止恢复**：横移计入抬升、半格无滞回、free 钳盘边、open≪0.5 提前钉格、斜拖优先纯轴中间格。  

@@ -272,30 +272,33 @@ flash  →  fill  →  pause  →  reveal  →  game-over visible
 ## 10. 投影（Ghost）— 设计摘要
 
 > **完整规格 SSOT**：[GHOST-DESIGN.md](./GHOST-DESIGN.md)  
-> 实现：`feel/ghost-policy.js` · 抬升边界 `feel/drag-session.js`
+> 实现：`feel/ghost-policy.js` · 抬升 / 意图 `feel/drag-session.js` · 绘制 `view.js`
 
 ### 产品目标
 
-跟手 · **居中稳定** · 不甩影 · 仅合法 · 横竖意图一致。
+**跟本体** · **跟方向** · 居中稳定 · 卡边粘 · 不甩影 · 仅合法。
 
-### 流水线（每帧）
+### 流水线（每帧，摘要）
 
 1. 底排 engage → 否则无影  
-2. 由视觉 origin 算 **free**（浮点想落点）  
-3. **死区**（半格 + `SNAP_HYST`）内钉 **sticky**  
-4. 慢速：open/edge + 滞回步进；快速 / lag 大：free 邻域吸附  
-5. 轴意图：横优先同排；抬升**只计上移**  
-6. `lag > MAX_LAG` → 灭影（不钳盘边救命）
+2. 视觉 origin → **free**（本体想落点）  
+3. **开阔**：约半格过中线才换格（跟本体，不提前钉）  
+4. **卡边**（邻格不可放）：拖过 **1.3 格** 才尝试换影  
+5. **斜拖**：对角优先；抑制「先横后斜」中间影（`intentDx/Dy` + `DIAG_*`）  
+6. 抬升**只计上移**；`lag > MAX_LAG` → 灭影  
 
-### 关键出厂
+### 关键出厂（摘录）
 
-| 常量 | 含义 |
-|------|------|
-| `FEEL_GHOST_OPEN_SNAP` | 开阔换格 |
-| `FEEL_GHOST_SNAP_HYST` | 换格滞回 / 居中防抖 |
-| `FEEL_GHOST_EDGE_HOLD` | 边缘粘滞 |
-| `FEEL_GHOST_MAX_LAG` | 影-块最远 |
-| `FEEL_AXIS_DOMINANCE` | 横竖轴判定 |
+| 常量 | 含义 / 出厂方向 |
+|------|-----------------|
+| `FEEL_GHOST_OPEN_SNAP` | 开阔半格（**0.5**） |
+| `FEEL_GHOST_EDGE_HOLD` | 卡边 **1.3** |
+| `FEEL_GHOST_MAX_LAG` | 影-块最远（**1.45**，须 > EDGE） |
+| `FEEL_GHOST_DIAG_RATIO` / `MINOR` | 斜向判定 / 次轴门槛 |
+| `FEEL_GHOST_SNAP_HYST` | 小滞回防抖 |
+| `FEEL_AXIS_DOMINANCE` | 横竖主导 |
+
+两种阴影：盘上 **落点投影**（ghost-policy）≠ tray **扁影**（`addTrayPieceShadow`）。渲染池化见 [PROJECT-HISTORY §14](./PROJECT-HISTORY.md)。
 
 ---
 
@@ -322,10 +325,12 @@ flash  →  fill  →  pause  →  reveal  →  game-over visible
 
 | 滑条 | 调什么 |
 |------|--------|
-| 开阔换格阈值 | 跟手灵敏 |
-| **换格滞回(防抖)** | 居中越稳越大 |
-| 边缘粘滞 | 贴死边难挤 |
-| 影-块最大距离 | 允许多远还显示影 |
+| 开阔换格阈值 | 开阔跟本体（约半格） |
+| **换格滞回(防抖)** | 居中防闪 |
+| 边缘粘滞 | 卡边需拖多远（出厂 1.3） |
+| 影-块最大距离 | 允许多远还显示影（须 > 边缘粘滞） |
+| 斜向意图比例 | 多大算斜拖 |
+| 斜向次轴门槛 | 斜拖压住单轴中间影的次轴分量 |
 
 ### 加大「操作幅度」优先项
 
