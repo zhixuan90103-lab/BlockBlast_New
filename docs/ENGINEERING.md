@@ -177,16 +177,27 @@ npm run cap:open
 ### 日常 Web 改动上真机
 
 ```bash
-npm run cap:sync   # = build + cap sync ios
-# Xcode ⌘R
+npm run cap:sync   # = build + cap sync ios（口语「打包」第一步）
+# Xcode 选真机 ⌘R
+# 或：xcodebuild -destination 'generic/platform=iOS' … + devicectl install/launch
 ```
+
+### 触控 / WKWebView 硬化
+
+| 层 | 文件 | 作用 |
+|----|------|------|
+| Web | `src/touch-hygiene.js` | 多指、双击缩放、contextmenu、非主指针 |
+| 游戏 | `game.js` `isPrimary` | 第二指不拖块 |
+| iOS | `BridgeViewController.hardenWebViewTouches` | 关 pinch / 双击 zoom / 长按 / bounce |
+
+改 Swift 后：更新 `plugins/native-haptics/` 真源并 `npm run ios:bootstrap`（或至少复制 + cap sync）。
 
 ### Xcode 检查
 
 1. Signing → Team  
 2. Bundle ID 与 `appId` 一致  
-3. 真机设备  
-4. 震动按钮自测  
+3. 真机设备（非模拟器，除非明确要测模拟器）  
+4. 震动 / 设置面板 / 拖块自测  
 
 `bootstrap-ios.mjs` 会：缺 `ios/` 时 `cap add ios`、复制 Swift、改 Main.storyboard、修补 pbxproj、`cap sync`。
 

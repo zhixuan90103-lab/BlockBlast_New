@@ -150,9 +150,12 @@ export function tryPayoffTray(board, rng = Math.random) {
   const used = new Set();
   let sim = board.map((row) => row.slice());
 
-  // 第一块：最高 lines，前 3 名随机
+  // 第一块：强偏好最高 lines（70% 取第 1，否则前 3 随机）——更「准钥匙」
   const topN = ranked.slice(0, Math.min(3, ranked.length));
-  const first = topN[Math.floor(rng() * topN.length)];
+  let first = topN[0];
+  if (topN.length > 1 && rng() > 0.7) {
+    first = topN[Math.floor(rng() * topN.length)];
+  }
   picked.push(first.form);
   used.add(matrixKey(first.form.matrix));
   if (fitsOn(sim, first.form.matrix, first.r, first.c)) {

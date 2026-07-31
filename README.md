@@ -42,7 +42,7 @@ npm run dev
 # → http://127.0.0.1:5190/
 ```
 
-应看到：竖屏框内的 Block Blast 盘面、分数 HUD、左下角 **手感1/2**、右下角 **调参**。
+应看到：竖屏框内的 Block Blast 盘面、分数 HUD、**右上角设置**（齿轮）。
 
 ---
 
@@ -51,20 +51,22 @@ npm run dev
 ```text
 index.html
   └─ src/main.js
+       ├─ installTouchHygiene()  ← 禁双指/双击缩放/长按菜单
        ├─ createGame()           ← src/game/game.js
-       ├─ createFeelPanel()      ← 调参 + 手感预设
+       ├─ createFeelPanel()      ← 右上角设置 + 手感预设 + 滑条
        ├─ viewport / renderer / haptics
 ```
 
 DOM 约定（勿拆）：
 
 ```text
-#letterbox > #phone-frame > (#stage | #hud | death-flash | game-over)
+#letterbox > #phone-frame > (#stage | #hud | death-flash | game-over | #feel-panel)
 ```
 
 - `#stage`：3D canvas  
 - `#hud`：分数与安全区 UI  
-- `[data-death-flash]` / `[data-game-over]`：死亡闪红与全屏结算（盖住 stage+hud）
+- `[data-death-flash]` / `[data-game-over]`：死亡闪红与全屏结算  
+- `#feel-panel`：右上角设置入口；面板内含手感1/2 与调参  
 
 ---
 
@@ -72,12 +74,14 @@ DOM 约定（勿拆）：
 
 | 域 | 要点 |
 |----|------|
-| 操作 | 槽固定拿起、指速增益、快/慢双模 ghost、仅合法投影 |
+| 操作 | 槽固定拿起、指速增益、快/慢双模 ghost、仅合法投影；仅主指针 |
 | 消行 | 空槽常驻、方向缩转、debris、屏震按行数 |
 | 震动 | 换格 / 将消预览 / 消除 **3 波 T–C**（仅 iOS 原生） |
 | 死亡 | 闪红×2 → 自下填 → 停顿 → 自上揭 → 全屏 GO |
 | 发块 | 阶段 + 局面 Intent（见 DEAL-PUSH-COMPLETE） |
-| 调参 | 手感1/2 + 面板（defaults 为真源） |
+| 布局 | tray 三槽；**高度滑条中心固定**；默认区高 7 · 区样式默认隐藏 |
+| 调参 | 右上角设置 → 手感1/2 + 面板（`defaults.js` 为真源） |
+| 触控 | Web + WKWebView 关闭系统缩放/放大镜干扰 |
 
 ---
 
@@ -88,9 +92,10 @@ DOM 约定（勿拆）：
 npm run ios:bootstrap
 npm run cap:open
 
-# 日常
-npm run cap:sync    # build + sync
-# Xcode：Team → 真机 → Run
+# 日常（口语「打包」）
+npm run cap:sync    # build + sync → ios/App/App/public
+# 然后：Xcode 选真机 ⌘R
+# 或：xcodebuild（iphoneos）+ xcrun devicectl device install/launch
 ```
 
 | 配置点 | 位置 |

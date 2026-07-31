@@ -1,6 +1,6 @@
 /**
- * 手机友好调参面板：滑条写入 tune，并通知游戏 relayout / repaint。
- * 左下角「手感1 / 手感2」快速切换预设（长按保存当前参数到该槽）。
+ * 手感调参面板：右上角「设置」入口；
+ * 面板内含手感1/2 预设 + 滑条（长按预设可保存到该槽）。
  */
 import {
   applyFeelPreset,
@@ -31,10 +31,53 @@ export function createFeelPanel(opts = {}) {
   root.className = 'feel-panel is-collapsed';
   root.setAttribute('aria-label', '手感调参');
 
-  /** 左下角手感预设快捷切换 */
+  /** 右上角设置入口 */
+  const fab = document.createElement('button');
+  fab.type = 'button';
+  fab.className = 'feel-panel-fab';
+  fab.setAttribute('aria-label', '设置');
+  fab.setAttribute('aria-expanded', 'false');
+  fab.title = '设置';
+  fab.innerHTML = `
+    <svg class="feel-panel-fab-icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      <path fill="currentColor" d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.59.24-1.13.55-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 8.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.83 14.52a.5.5 0 0 0-.12.64l1.92 3.32c.13.23.4.32.64.22l2.39-.96c.5.39 1.04.7 1.63.94l.36 2.54c.05.24.25.42.49.42h3.8c.24 0 .44-.18.49-.42l.36-2.54c.59-.24 1.13-.55 1.63-.94l2.39.96c.24.1.51 0 .64-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/>
+    </svg>
+  `;
+
+  /** 半透明遮罩：点空白收起 */
+  const scrim = document.createElement('button');
+  scrim.type = 'button';
+  scrim.className = 'feel-panel-scrim';
+  scrim.setAttribute('aria-label', '关闭设置');
+  scrim.hidden = true;
+  scrim.tabIndex = -1;
+
+  const sheet = document.createElement('div');
+  sheet.className = 'feel-panel-sheet';
+  sheet.hidden = true;
+
+  const head = document.createElement('div');
+  head.className = 'feel-panel-head';
+  head.innerHTML = `
+    <span class="feel-panel-title">设置</span>
+    <div class="feel-panel-head-actions">
+      <button type="button" class="feel-panel-btn" data-feel-reset>重置</button>
+      <button type="button" class="feel-panel-btn feel-panel-btn-primary" data-feel-close>收起</button>
+    </div>
+  `;
+
+  /** 面板内：手感预设 */
   const presetBar = document.createElement('div');
   presetBar.className = 'feel-preset-bar';
   presetBar.setAttribute('aria-label', '手感预设');
+
+  const presetLabel = document.createElement('div');
+  presetLabel.className = 'feel-preset-label';
+  presetLabel.textContent = '操作手感';
+  presetBar.appendChild(presetLabel);
+
+  const presetRow = document.createElement('div');
+  presetRow.className = 'feel-preset-row';
 
   /** @type {Map<'1'|'2', HTMLButtonElement>} */
   const presetBtns = new Map();
@@ -47,28 +90,12 @@ export function createFeelPanel(opts = {}) {
     btn.title = '点击切换 · 长按保存当前参数到此槽';
     btn.setAttribute('aria-pressed', 'false');
     presetBtns.set(id, btn);
-    presetBar.appendChild(btn);
+    presetRow.appendChild(btn);
   }
-
-  const fab = document.createElement('button');
-  fab.type = 'button';
-  fab.className = 'feel-panel-fab';
-  fab.textContent = '调参';
-  fab.setAttribute('aria-expanded', 'false');
-
-  const sheet = document.createElement('div');
-  sheet.className = 'feel-panel-sheet';
-  sheet.hidden = true;
-
-  const head = document.createElement('div');
-  head.className = 'feel-panel-head';
-  head.innerHTML = `
-    <span class="feel-panel-title">手感 / 布局</span>
-    <div class="feel-panel-head-actions">
-      <button type="button" class="feel-panel-btn" data-feel-reset>重置</button>
-      <button type="button" class="feel-panel-btn feel-panel-btn-primary" data-feel-close>收起</button>
-    </div>
-  `;
+  const presetHint = document.createElement('p');
+  presetHint.className = 'feel-preset-hint';
+  presetHint.textContent = '长按「手感」可保存当前参数到该槽';
+  presetBar.append(presetRow, presetHint);
 
   const body = document.createElement('div');
   body.className = 'feel-panel-body';
@@ -130,7 +157,6 @@ export function createFeelPanel(opts = {}) {
       const fmt = item.format || ((v) => String(v));
       const applyLocal = (v) => {
         val.textContent = fmt(v);
-        // 仅当与当前滑条不一致时写回，减少 iOS 上 input 被打断
         if (Number(range.value) !== v) {
           range.value = String(v);
         }
@@ -154,8 +180,8 @@ export function createFeelPanel(opts = {}) {
     body.appendChild(sec);
   }
 
-  sheet.append(head, body);
-  root.append(presetBar, fab, sheet);
+  sheet.append(head, presetBar, body);
+  root.append(fab, scrim, sheet);
   mount.appendChild(root);
 
   function syncFromTune() {
@@ -204,7 +230,6 @@ export function createFeelPanel(opts = {}) {
       btn.textContent = prev;
       btn.classList.remove('is-saved');
     }, 700);
-    // 保存后视为当前槽
     setActiveFeelPresetId(id);
     highlightPreset(id);
   }
@@ -248,10 +273,8 @@ export function createFeelPanel(opts = {}) {
       longPressed = false;
     });
     btn.addEventListener('pointerleave', () => {
-      // 手指滑出取消长按，避免误存
       if (!longPressed) clearLong();
     });
-    // 阻止冒泡到棋盘拖拽
     for (const ev of ['touchstart', 'touchend', 'click']) {
       btn.addEventListener(ev, (e) => e.stopPropagation(), { passive: false });
     }
@@ -261,16 +284,22 @@ export function createFeelPanel(opts = {}) {
     root.classList.toggle('is-collapsed', !open);
     root.classList.toggle('is-open', open);
     sheet.hidden = !open;
+    scrim.hidden = !open;
     fab.setAttribute('aria-expanded', open ? 'true' : 'false');
-    fab.hidden = open;
-    // 面板打开时仍可看到左下角预设
+    fab.classList.toggle('is-open', open);
     if (open) syncFromTune();
   }
 
   fab.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    setOpen(true);
+    setOpen(!root.classList.contains('is-open'));
+  });
+
+  scrim.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setOpen(false);
   });
 
   head.querySelector('[data-feel-close]')?.addEventListener('click', (e) => {
@@ -282,7 +311,6 @@ export function createFeelPanel(opts = {}) {
   head.querySelector('[data-feel-reset]')?.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    // 重置 = 回到手感1出厂（defaults）；switchPreset 内已 onChange
     switchPreset('1');
   });
 
@@ -290,6 +318,8 @@ export function createFeelPanel(opts = {}) {
   sheet.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
   presetBar.addEventListener('pointerdown', (e) => e.stopPropagation());
   presetBar.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+  fab.addEventListener('pointerdown', (e) => e.stopPropagation());
+  fab.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
 
   const unsub = onTuneChange(() => {
     if (!suppressSync) syncFromTune();

@@ -1,5 +1,5 @@
 /**
- * 拖拽会话（P7/P15）：槽位固定拿起 + 指速积分增益 + 短视觉平滑。
+ * 拖拽会话（P7/P15）：槽位固定拿起 + 跟手积分增益（速度曲线或固定倍率）+ 短视觉平滑。
  * 不处理 grid / sticky / 震动。
  */
 import { FEEL_DRAG_OFFSET_X } from '../defaults.js';
@@ -61,6 +61,19 @@ export function createDragSession(opts) {
 }
 
 /**
+ * smoothstep 映射 MIN→MAX
+ * @param {number} t01
+ * @param {number} gmin
+ * @param {number} gmax
+ */
+function gainLerpEased(t01, gmin, gmax) {
+  const t = Math.min(1, Math.max(0, t01));
+  const eased = t * t * (3 - 2 * t);
+  return gmin + (gmax - gmin) * eased;
+}
+
+/**
+ * 速度映射增益（MODE=0 / 手感1）：慢精、快远
  * @param {number} speedCellsPerSec
  * @param {() => import('../tune.js').TuneState} getTune
  */
@@ -69,9 +82,35 @@ export function pointerGainFromSpeed(speedCellsPerSec, getTune) {
   const gmin = tune.FEEL_POINTER_GAIN_MIN ?? 0.92;
   const gmax = tune.FEEL_POINTER_GAIN_MAX ?? 1.38;
   const vref = Math.max(0.5, tune.FEEL_POINTER_SPEED_REF ?? 9);
-  const t = Math.min(1, Math.max(0, speedCellsPerSec / vref));
-  const eased = t * t * (3 - 2 * t);
-  return gmin + (gmax - gmin) * eased;
+  return gainLerpEased(speedCellsPerSec / vref, gmin, gmax);
+}
+
+/**
+ * 固定倍率（MODE=1 / 手感2）：块位移 = 指尖位移 × K，与速度/点击点无关
+ * @param {() => import('../tune.js').TuneState} getTune
+ */
+export function pointerGainConstant(getTune) {
+  const tune = getTune();
+  const k = tune.FEEL_POINTER_GAIN_K;
+  if (typeof k === 'number' && Number.isFinite(k) && k > 0) return k;
+  // 兼容：未写 K 时回退 MAX
+  const fallback = tune.FEEL_POINTER_GAIN_MAX;
+  return typeof fallback === 'number' && fallback > 0 ? fallback : 1;
+}
+
+/**
+ * 按当前 MODE 取目标增益
+ * @param {ReturnType<typeof createDragSession>} _session
+ * @param {number} _fx
+ * @param {number} _fy
+ * @param {number} _cell
+ * @param {number} speedCellsPerSec
+ * @param {() => import('../tune.js').TuneState} getTune
+ */
+export function pointerGainTarget(_session, _fx, _fy, _cell, speedCellsPerSec, getTune) {
+  const mode = getTune().FEEL_POINTER_GAIN_MODE ?? 0;
+  if (mode >= 1) return pointerGainConstant(getTune);
+  return pointerGainFromSpeed(speedCellsPerSec, getTune);
 }
 
 /**
@@ -91,7 +130,14 @@ export function samplePointer(session, fx, fy, layout, getTune) {
   const dy = fy - session.lastFy;
   const dtSec = Math.max(0.001, (now - session.lastT) / 1000);
   const speedCells = Math.hypot(dx, dy) / cell / dtSec;
-  const gainTarget = pointerGainFromSpeed(speedCells, getTune);
+  const gainTarget = pointerGainTarget(
+    session,
+    fx,
+    fy,
+    cell,
+    speedCells,
+    getTune,
+  );
 
   const gTau = Math.max(0, tune.FEEL_GAIN_SMOOTH_TIME ?? 0);
   if (gTau <= 0 || session.smoothGain == null) {

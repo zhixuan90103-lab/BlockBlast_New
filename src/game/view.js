@@ -187,7 +187,7 @@ export function createBoardView(scene) {
       }
     }
 
-    // tray：正版无大槽框，仅三区居中放块（命中区在 layout.slots，不绘制）
+    // tray 槽位框在 paint 中按 SHOW_TRAY_ZONES 绘制（与动态 pieces 同帧）
   }
 
   function paintEmptyStyle(group) {
@@ -366,47 +366,53 @@ export function createBoardView(scene) {
    * @param {boolean} ghostValid
    * @param {ReturnType<import('./layout.js').computeLayout>} layout
    */
-  /** 底栏三等分命中区（与 hitTrayIndex 一致） */
+  /** 底栏三等分摆放区（与 hitTrayIndex / layout.tray.slots 一致） */
   function addTrayZoneOverlays(layout) {
-    const { frameW, frameH } = layout;
+    const { frameW, frameH, cell } = layout;
     const slots = layout.tray?.slots;
     if (!slots?.length) return;
-    // 左 / 中 / 右 易区分
-    const fills = [0x38bdf8, 0xfbbf24, 0xf472b6];
-    const stroke = 0xffffff;
+
+    const pad = Math.max(2, (cell || 20) * 0.06);
     for (let i = 0; i < slots.length; i++) {
       const slot = slots[i];
+      const w = Math.max(4, slot.w - pad);
+      const h = Math.max(4, slot.h - pad);
       const cx = slot.x + slot.w / 2;
       const cy = slot.y + slot.h / 2;
       const center = frameToThree(cx, cy, frameW, frameH);
-      const z = 0.04;
+      const corner = Math.min(0.18, (cell || 20) * 0.14 / Math.min(w, h));
+      const z = -0.02;
 
-      const fill = new THREE.Mesh(
-        new THREE.PlaneGeometry(Math.max(1, slot.w - 2), Math.max(1, slot.h - 2)),
+      // 外框（略亮）
+      const frame = new THREE.Mesh(
+        getRoundedRectGeometry(w, h, corner).clone(),
         new THREE.MeshBasicMaterial({
-          color: fills[i % fills.length],
+          color: 0x9b8cff,
           transparent: true,
-          opacity: 0.22,
+          opacity: 0.38,
           depthWrite: false,
         }),
       );
-      fill.position.set(center.x, center.y, z);
+      frame.position.set(center.x, center.y, z);
+      dynamicRoot.add(frame);
+      dynamicMeshes.push(frame);
+
+      // 内底（与棋盘空槽气质接近，略深）
+      const inset = Math.max(2, (cell || 20) * 0.07);
+      const iw = Math.max(2, w - inset * 2);
+      const ih = Math.max(2, h - inset * 2);
+      const fill = new THREE.Mesh(
+        getRoundedRectGeometry(iw, ih, corner * 0.9).clone(),
+        new THREE.MeshBasicMaterial({
+          color: 0x3a2f8a,
+          transparent: true,
+          opacity: 0.55,
+          depthWrite: false,
+        }),
+      );
+      fill.position.set(center.x, center.y, z + 0.002);
       dynamicRoot.add(fill);
       dynamicMeshes.push(fill);
-
-      // 细边框（略大于 fill）
-      const border = new THREE.Mesh(
-        new THREE.PlaneGeometry(Math.max(1, slot.w), Math.max(1, slot.h)),
-        new THREE.MeshBasicMaterial({
-          color: stroke,
-          transparent: true,
-          opacity: 0.35,
-          depthWrite: false,
-        }),
-      );
-      border.position.set(center.x, center.y, z - 0.001);
-      dynamicRoot.add(border);
-      dynamicMeshes.push(border);
     }
   }
 
@@ -882,7 +888,7 @@ export function createBoardView(scene) {
 
 
 
-    // 调试：底栏三等分点击区
+    // 底栏三等分摆放区
     if (getTune().SHOW_TRAY_ZONES >= 0.5) {
       addTrayZoneOverlays(layout);
     }

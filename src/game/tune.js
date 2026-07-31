@@ -43,9 +43,12 @@ export function createDefaultTune() {
     FEEL_DRAG_OFFSET_Y_MAX: D.FEEL_DRAG_OFFSET_Y_MAX,
     FEEL_DRAG_LIFT_TRAVEL_CELLS: D.FEEL_DRAG_LIFT_TRAVEL_CELLS,
     FEEL_DRAG_LIFT_POWER: D.FEEL_DRAG_LIFT_POWER,
+    FEEL_POINTER_GAIN_MODE: D.FEEL_POINTER_GAIN_MODE,
     FEEL_POINTER_GAIN_MIN: D.FEEL_POINTER_GAIN_MIN,
     FEEL_POINTER_GAIN_MAX: D.FEEL_POINTER_GAIN_MAX,
     FEEL_POINTER_SPEED_REF: D.FEEL_POINTER_SPEED_REF,
+    FEEL_POINTER_GAIN_K: D.FEEL_POINTER_GAIN_K,
+    FEEL_POINTER_DIST_REF: D.FEEL_POINTER_DIST_REF,
     FEEL_SMOOTH_TIME: D.FEEL_SMOOTH_TIME,
     FEEL_GAIN_SMOOTH_TIME: D.FEEL_GAIN_SMOOTH_TIME,
     FEEL_DRAG_FOLLOW_GAIN_MAX: D.FEEL_DRAG_FOLLOW_GAIN_MAX,
@@ -107,6 +110,10 @@ export function createDefaultTune() {
     FEEL_AXIS_DOMINANCE: D.FEEL_AXIS_DOMINANCE,
     /** 显示 tray 三等分区 */
     SHOW_TRAY_ZONES: D.SHOW_TRAY_ZONES,
+    /** E2：1=单块 tray · 3=经典三块（可用 ?e2=1 覆盖） */
+    DEBUG_TRAY_SIZE: D.DEBUG_TRAY_SIZE,
+    /** E3：1=真随机发块（可用 ?e3=1 覆盖） */
+    DEBUG_DEAL_TRUE_RANDOM: D.DEBUG_DEAL_TRUE_RANDOM ? 1 : 0,
 
     // —— 发块阶段（按分数）——
     DEAL_PHASE_ENABLED: D.DEAL_PHASE_ENABLED ? 1 : 0,
@@ -154,16 +161,23 @@ export function createDefaultTune() {
     DEAL_BAN_MICRO: D.DEAL_BAN_MICRO ? 1 : 0,
     DEAL_MICRO_CLUTCH_FILL: D.DEAL_MICRO_CLUTCH_FILL,
     DEAL_MICRO_CLUTCH_CHANCE: D.DEAL_MICRO_CLUTCH_CHANCE,
+    DEAL_ASSIST_USE_INTERVAL: D.DEAL_ASSIST_USE_INTERVAL ? 1 : 0,
     DEAL_CLEAR_ASSIST_EVERY: D.DEAL_CLEAR_ASSIST_EVERY,
     DEAL_CLEAR_ASSIST_STREAK: D.DEAL_CLEAR_ASSIST_STREAK,
     DEAL_CLEAR_ASSIST_FILL_MAX: D.DEAL_CLEAR_ASSIST_FILL_MAX,
     DEAL_CLEAR_ASSIST_MIN_DROP: D.DEAL_CLEAR_ASSIST_MIN_DROP,
+    DEAL_PRESSURE_ASSIST_CHANCE_CHOKE: D.DEAL_PRESSURE_ASSIST_CHANCE_CHOKE,
+    DEAL_PRESSURE_ASSIST_CHANCE_FRAG: D.DEAL_PRESSURE_ASSIST_CHANCE_FRAG,
+    DEAL_ASSIST_MIN_GAP: D.DEAL_ASSIST_MIN_GAP,
     DEAL_CLEAR_FINISHER_FILL_MAX: D.DEAL_CLEAR_FINISHER_FILL_MAX,
+    DEAL_FINISHER_CHANCE: D.DEAL_FINISHER_CHANCE,
     DEAL_EARLY_CLEAR_CHANCE: D.DEAL_EARLY_CLEAR_CHANCE,
     DEAL_EARLY_FORCE_FULL_CLEAR: D.DEAL_EARLY_FORCE_FULL_CLEAR ? 1 : 0,
     DEAL_CAVITY_GUIDE_CHANCE: D.DEAL_CAVITY_GUIDE_CHANCE,
     DEAL_PAYOFF_CHANCE: D.DEAL_PAYOFF_CHANCE,
     DEAL_PAYOFF_MIN_LINES: D.DEAL_PAYOFF_MIN_LINES,
+    DEAL_PAYOFF_NEAR_D1_FORCE: D.DEAL_PAYOFF_NEAR_D1_FORCE,
+    DEAL_PAYOFF_NEAR_FORCE_CHANCE: D.DEAL_PAYOFF_NEAR_FORCE_CHANCE,
     DEAL_CLEAR_OFFER_RETRY_MAX: D.DEAL_CLEAR_OFFER_RETRY_MAX,
     DEAL_EARLY_NEAT_SHAPES: D.DEAL_EARLY_NEAT_SHAPES ? 1 : 0,
     DEAL_EARLY_CLEAR_GUIDE_MUL: D.DEAL_EARLY_CLEAR_GUIDE_MUL,
@@ -216,9 +230,14 @@ export function needsLayoutRelayout(key) {
  */
 export function setTune(partial) {
   Object.assign(tune, partial);
-  // 兼容旧字段
+  // 兼容旧字段：速度上限 / 固定倍率 → FOLLOW_GAIN_MAX
   if (Object.prototype.hasOwnProperty.call(partial, 'FEEL_POINTER_GAIN_MAX')) {
     tune.FEEL_DRAG_FOLLOW_GAIN_MAX = tune.FEEL_POINTER_GAIN_MAX;
+  }
+  if (Object.prototype.hasOwnProperty.call(partial, 'FEEL_POINTER_GAIN_K')) {
+    if ((tune.FEEL_POINTER_GAIN_MODE ?? 0) >= 1) {
+      tune.FEEL_DRAG_FOLLOW_GAIN_MAX = tune.FEEL_POINTER_GAIN_K;
+    }
   }
   for (const fn of listeners) fn(tune);
 }
@@ -270,11 +289,11 @@ export const TUNE_FIELDS = [
       },
       {
         key: 'LAYOUT_TRAY_BAND_CELLS',
-        label: '摆放区带高度',
-        min: 2.2,
-        max: 4.5,
+        label: '摆放区高度(中心固定)',
+        min: 1.5,
+        max: 15,
         step: 0.1,
-        format: (v) => v.toFixed(1),
+        format: (v) => `${v.toFixed(1)}格`,
       },
       {
         key: 'LAYOUT_GRID_MARGIN_X',
@@ -362,8 +381,16 @@ export const TUNE_FIELDS = [
         format: (v) => v.toFixed(2),
       },
       {
+        key: 'FEEL_POINTER_GAIN_MODE',
+        label: '跟手映射(0速/1倍率)',
+        min: 0,
+        max: 1,
+        step: 1,
+        format: (v) => (v >= 1 ? '固定倍率' : '速度'),
+      },
+      {
         key: 'FEEL_POINTER_GAIN_MIN',
-        label: '慢速跟手增益',
+        label: '慢速跟手增益(手感1)',
         min: 0.7,
         max: 1.1,
         step: 0.01,
@@ -371,7 +398,7 @@ export const TUNE_FIELDS = [
       },
       {
         key: 'FEEL_POINTER_GAIN_MAX',
-        label: '快速跟手增益',
+        label: '快速跟手增益(手感1)',
         min: 1,
         max: 1.8,
         step: 0.01,
@@ -379,11 +406,19 @@ export const TUNE_FIELDS = [
       },
       {
         key: 'FEEL_POINTER_SPEED_REF',
-        label: '加速参考指速(格/秒)',
+        label: '加速参考指速(手感1)',
         min: 3,
         max: 20,
         step: 0.5,
         format: (v) => v.toFixed(1),
+      },
+      {
+        key: 'FEEL_POINTER_GAIN_K',
+        label: '跟手倍率k(手感2)',
+        min: 0.7,
+        max: 2.2,
+        step: 0.05,
+        format: (v) => `${v.toFixed(2)}×`,
       },
       {
         key: 'FEEL_SMOOTH_TIME',
@@ -812,12 +847,52 @@ export const TUNE_FIELDS = [
         format: (v) => (v >= 0.5 ? '开' : '关'),
       },
       {
+        key: 'DEAL_ASSIST_USE_INTERVAL',
+        label: '旧:按轮数助清(默认关)',
+        min: 0,
+        max: 1,
+        step: 1,
+        format: (v) => (v >= 0.5 ? '开(打卡)' : '关·看盘面'),
+      },
+      {
         key: 'DEAL_CLEAR_ASSIST_EVERY',
-        label: '每隔N轮才助清/清屏',
+        label: '旧:每隔N轮助清',
         min: 2,
-        max: 10,
+        max: 99,
         step: 1,
         format: (v) => String(Math.round(v)),
+      },
+      {
+        key: 'DEAL_PRESSURE_ASSIST_CHANCE_CHOKE',
+        label: '窒息盘助清概率',
+        min: 0,
+        max: 0.9,
+        step: 0.02,
+        format: (v) => v.toFixed(2),
+      },
+      {
+        key: 'DEAL_PRESSURE_ASSIST_CHANCE_FRAG',
+        label: '碎片盘助清概率',
+        min: 0,
+        max: 0.9,
+        step: 0.02,
+        format: (v) => v.toFixed(2),
+      },
+      {
+        key: 'DEAL_ASSIST_MIN_GAP',
+        label: '助清最少间隔轮',
+        min: 0,
+        max: 6,
+        step: 1,
+        format: (v) => String(Math.round(v)),
+      },
+      {
+        key: 'DEAL_FINISHER_CHANCE',
+        label: '盘空收官全清概率',
+        min: 0,
+        max: 0.7,
+        step: 0.02,
+        format: (v) => v.toFixed(2),
       },
       {
         key: 'DEAL_CLEAR_ASSIST_STREAK',
@@ -839,7 +914,15 @@ export const TUNE_FIELDS = [
         key: 'DEAL_PAYOFF_CHANCE',
         label: '大消钥匙块概率',
         min: 0,
-        max: 0.7,
+        max: 0.85,
+        step: 0.02,
+        format: (v) => v.toFixed(2),
+      },
+      {
+        key: 'DEAL_PAYOFF_NEAR_FORCE_CHANCE',
+        label: '多条近满时钥匙概率',
+        min: 0.4,
+        max: 1,
         step: 0.02,
         format: (v) => v.toFixed(2),
       },
@@ -1038,11 +1121,27 @@ export const TUNE_FIELDS = [
     ],
   },
   {
-    group: '调试',
+    group: '调试 · 乐趣核实验',
     items: [
       {
         key: 'SHOW_TRAY_ZONES',
         label: '显示三等分区',
+        min: 0,
+        max: 1,
+        step: 1,
+        format: (v) => (v >= 0.5 ? '开' : '关'),
+      },
+      {
+        key: 'DEBUG_TRAY_SIZE',
+        label: 'E2 tray块数',
+        min: 1,
+        max: 3,
+        step: 2,
+        format: (v) => (v < 1.5 ? '1（实验）' : '3（经典）'),
+      },
+      {
+        key: 'DEBUG_DEAL_TRUE_RANDOM',
+        label: 'E3 真随机发块',
         min: 0,
         max: 1,
         step: 1,

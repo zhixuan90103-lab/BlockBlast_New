@@ -1,16 +1,16 @@
 # Block Blast 项目实现与问题纪要
 
-> 整理日期：2026-07-30  
-> 范围：研究冻结 → DEFAULTS → M0–M2 → 视觉/手感 → feel 拆分 → 消行反馈/3 波震动/屏震/debris → 死亡与结算 → 发块 Intent  
+> 整理日期：**2026-07-31**（续 §13）  
+> 范围：研究冻结 → DEFAULTS → M0–M2 → 视觉/手感 → feel 拆分 → 消行/震动/屏震/debris → 死亡 → 发块 Intent → **设置 UI · 触控 · 摆放区几何**  
 > 工程根目录：`three-webgpu-cap-shell/`（Git：`zhixuan90103-lab/BlockBlast_New`）  
 > 研究材料：仓库上级 `../research/`（多数不在 shell 的 git 内）
 
-本文是**产品实现与踩坑全景**，与下列文档配合阅读：
+本文是**产品实现与踩坑全景（项目笔记）**，与下列文档配合阅读：
 
 | 文档 | 用途 |
 |------|------|
 | [README.md](./README.md) | **文档索引与规范** |
-| [FEEL-DESIGN.md](./FEEL-DESIGN.md) | 手感问题 → 不变量（P1–P24，含消行/震动/死亡） |
+| [FEEL-DESIGN.md](./FEEL-DESIGN.md) | 手感问题 → 不变量（P1–P24，含消行/震动/死亡/布局区） |
 | [DEAL-PUSH-COMPLETE.md](./DEAL-PUSH-COMPLETE.md) | **发块完整规格 SSOT** |
 | [DEAL-DESIGN.md](./DEAL-DESIGN.md) | 发块短摘要（指针） |
 | [ENGINEERING.md](./ENGINEERING.md) | 底座、Capacitor、WebGPU、安全区 |
@@ -466,3 +466,75 @@ index.html / style.css
 | 死亡 | 先演出再 GO | 对齐「完蛋了」节奏，非硬切 UI |
 | 发块文档 | DEAL-PUSH-COMPLETE 为 SSOT | 避免 DEAL-DESIGN 短文与完整需求分叉 |
 | Icon | 扁平 1024 | 商店/桌面一致、无复杂透视 |
+
+---
+
+## 13. 设置 UI · 触控清理 · 摆放区 · 出厂标定（2026-07-30 → 07-31）
+
+> **本节为当前阶段项目笔记。** 设计细节见 [FEEL-DESIGN.md](./FEEL-DESIGN.md) §5 / §11 · 入口 [ENTRYPOINTS.md](./ENTRYPOINTS.md)。
+
+### 13.1 问题 → 修改
+
+| 现象 | 原因 / 旧行为 | 修改 |
+|------|---------------|------|
+| 左下手感 + 右下调参挡盘 | FAB 常驻底栏 | **右上角设置齿轮**；手感1/2 与滑条进底部 sheet；遮罩可关 |
+| 双指/双击放大、长按放大镜 | WebKit 默认手势 | `touch-hygiene.js` + `BridgeViewController.hardenWebViewTouches`；拖块仅 **isPrimary** |
+| 调「摆放区高度」几乎无变化 | 槽写死为正方形 `宽/3` | 高度 = `trayCell × LAYOUT_TRAY_BAND_CELLS`（1.5–15） |
+| 调高度整盘上下跳 | band 参与棋盘竖向占位 | **棋盘占位用出厂 band**；滑条只改区 h，**中心锚点固定** |
+| 调试三等分区常显 | 默认开 | `SHOW_TRAY_ZONES = false`（面板调试项可开） |
+| 快速跟手偏肉 | MAX 1.25 | 手感1 **GAIN_MAX = 1.35**（预设 v16） |
+| 影甩太远 / 贴得太死 | lag 1.0 | **`FEEL_GHOST_MAX_LAG = 1.3`** |
+| tray 略偏下 | shift 0 | **`LAYOUT_TRAY_SHIFT_Y = -0.01`** |
+| 区默认偏矮 | band 3.2 | **`LAYOUT_TRAY_BAND_CELLS = 7`**（亦作布局锚点出厂） |
+
+### 13.2 架构补充
+
+```
+main.js
+  installTouchHygiene()          # 多指 / 双击 / contextmenu / 非主指针
+  createFeelPanel()              # 右上角 fab + scrim + sheet
+
+feel-panel.js
+  设置齿轮 ⇄ sheet
+  sheet: 手感1/2 | 滑条 | 重置/收起
+
+layout.js
+  packBand = DEFAULT_TRAY_BAND_CELLS   # 仅占位与锚点
+  zoneH    = tune.LAYOUT_TRAY_BAND_CELLS × trayCell
+  trayAnchorCy = 盘底 + gap + packBandH/2 + trayShift
+  slot.cy = trayAnchorCy               # 高度变，中心不动
+
+BridgeViewController
+  hardenWebViewTouches: pinch/双击/长按/bounce off
+```
+
+### 13.3 出厂默认摘要（以 defaults.js 为准，2026-07-31）
+
+| 域 | 常量 | 值 |
+|----|------|-----|
+| 手感1 快速增益 | `FEEL_POINTER_GAIN_MAX` | **1.35** |
+| 影-块最大距离 | `FEEL_GHOST_MAX_LAG` | **1.3** |
+| 摆放区高度 | `LAYOUT_TRAY_BAND_CELLS` | **7** |
+| 摆放物高度(下移) | `LAYOUT_TRAY_SHIFT_Y` | **-0.01** |
+| 显示三等分区 | `SHOW_TRAY_ZONES` | **false** |
+| 预设存档键 | `bb_feel_preset_v16_*` | 升版清旧槽污染 |
+
+### 13.4 决策
+
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| 调参入口 | 单设置按钮右上 | 盘面干净；开发期仍可达全参数 |
+| 区高锚点 | 中心固定 + 占位解耦 | 调参时不抖动棋盘/块 |
+| 区样式默认 | 关 | 正版无大槽框；需要时调试打开 |
+| Web/iOS | 同 `src/` | 避免双端分叉；仅原生层补 WKWebView |
+| 打包 | cap:sync → 真机 install | 口语「打包」= 上真机可玩包，非模拟器 |
+
+### 13.5 文档同步（本轮）
+
+| 文档 | 动作 |
+|------|------|
+| `docs/README.md` | 索引日期 07-31 · 真源表补 layout/touch · 近期主题 |
+| `AGENTS.md` / 根 README / shell README | DOM 与设置 UI · 打包说明 |
+| `ENTRYPOINTS.md` | 启动链 · feel-panel · Bridge harden |
+| `FEEL-DESIGN.md` §5/§11 | 设置 UI · 区高规则 · GAIN/lag |
+| 本节 **§13** | 项目笔记正文 |

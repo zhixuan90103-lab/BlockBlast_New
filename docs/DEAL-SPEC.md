@@ -1,6 +1,6 @@
 # 发块推送 · 现行行为（重构后）
 
-**状态：** v3 · 2026-07-30（局面门控 + 默认 G2）  
+**状态：** v3.1 · 2026-07-30（**局面助清** + **payoff 优先**；默认关闭按轮数打卡）  
 **入口：** `deal/pipeline.js` → `generateTray`  
 **数值：** `defaults.js`  
 **完整规格 SSOT：** [DEAL-PUSH-COMPLETE.md](./DEAL-PUSH-COMPLETE.md)  
@@ -40,16 +40,16 @@
 
 ```
 snapshot 当前盘 → classifyBoardState
-  → 1 续推清屏（最多 N 次；healthy 可取消 pending）
-  → 2 beat：真全清（仅 healthy/setup/empty）→ 否则助清
-  → 3 偶发 payoff-multi（需 setup 特征）
-  → 4 偶发 cavity-guide（碎片优先）
-  → 5 稀有阶段全清 × 局面系数
-  → 6 主采样（默认 G2 instant 窗）
-  → 7 fallback
+  → 1 payoff-multi（铺局/近满线优先；续推清屏时让路）
+  → 2 续推清屏 / 压力助清(choke·碎片+概率) / 收官全清(低fill彩蛋)
+       ※ 默认不再「每 N 轮必福利」；DEAL_ASSIST_USE_INTERVAL 可开回旧行为
+  → 3 cavity-guide（碎片/窒息）
+  → 4 稀有阶段全清 × 局面系数
+  → 5 主采样（默认 G2）
+  → 6 fallback
 ```
 
-**不看分数。**
+助清/全清/钥匙 **看盘面**；阶段 early/mid/late 仍可按 **分数** 切块型压力（与助清正交）。
 
 ---
 

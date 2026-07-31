@@ -16,7 +16,8 @@ import {
   FIT_GUARANTEE,
   TRAY_SIZE,
 } from '../defaults.js';
-import { countCells } from '../forms.js';
+import { getActiveTraySize, isDealTrueRandom } from '../debug-exp.js';
+import { countCells, makePiece, pickWeightedForm } from '../forms.js';
 import { getTune } from '../tune.js';
 import {
   acceptMainTray,
@@ -25,6 +26,7 @@ import {
   requireOrderIfNeeded,
 } from './accept.js';
 import {
+  canPlaceOnCells,
   countInstantFits,
   existsPlacementOrder,
   fillRatio,
@@ -111,7 +113,8 @@ function avgCells(pieces) {
  * @param {ReturnType<typeof getDealPolicy>} [policy]
  */
 function emit(board, pieces, mode, clearLen, wasAssistBeat = false, policy) {
-  const tray = pieces.slice(0, TRAY_SIZE);
+  const n = getActiveTraySize();
+  const tray = pieces.slice(0, n);
   dealSession.lastTraySig = signature(tray);
   const stats = trayStats(board, tray);
   const pol =
@@ -146,6 +149,67 @@ function emit(board, pieces, mode, clearLen, wasAssistBeat = false, policy) {
  * @param {() => number} rng
  * @param {ReturnType<typeof classifyBoardState>} boardState
  */
+/**
+ * T6 尝试概率：近满线多时抬高，成全「就差那一块」
+ * @param {ReturnType<typeof getDealPolicy>} policy
+ * @param {ReturnType<typeof classifyBoardState>} boardState
+ */
+function payoffRollChance(policy, boardState) {
+  let p = policy.payoffChance || 0;
+  if (p <= 0) return 0;
+  const nf = boardState.nearFull || { d1: 0, d2: 0, score: 0 };
+  const d1Need = policy.payoffNearD1Force ?? 2;
+  if (nf.d1 >= d1Need) {
+    p = Math.max(p, policy.payoffNearForceChance ?? 0.88);
+  } else if (nf.d1 >= 1 && nf.d2 >= 1) {
+    p = Math.max(p, 0.62);
+  } else if (boardState.class === 'setup') {
+    p = Math.min(1, p * 1.15);
+  }
+  return Math.min(1, Math.max(0, p));
+}
+
+/**
+ * 是否应尝试压力助清（局面触发，非每 N 轮打卡）
+ * @param {ReturnType<typeof getDealPolicy>} policy
+ * @param {ReturnType<typeof classifyBoardState>} boardState
+ * @param {() => number} rng
+ */
+function shouldPressureAssist(policy, boardState, rng) {
+  if (dealSession.assistStreakLeft > 0) return true;
+
+  const cls = boardState.class;
+  if (cls !== 'choke' && cls !== 'fragmented') return false;
+
+  const gap = policy.assistMinGap ?? 2;
+  if (dealSession.traysSinceAssist < gap) return false;
+
+  // 旧日历模式：仍支持 every
+  if (policy.useInterval) {
+    return dealSession.traysSinceAssist + 1 >= (policy.every || 99);
+  }
+
+  const chance = policy.pressureAssistChance || 0;
+  return chance > 0 && rng() < chance;
+}
+
+/**
+ * 收官全清彩蛋：盘较空、非铺局高压
+ * @param {ReturnType<typeof getDealPolicy>} policy
+ * @param {number} fill
+ * @param {ReturnType<typeof classifyBoardState>} boardState
+ * @param {() => number} rng
+ */
+function shouldFinisherClear(policy, fill, boardState, rng) {
+  if (!policy.allowFullClearSearch) return false;
+  if (fill <= 0.02 || fill > (policy.finisherFillMax ?? 0.22)) return false;
+  if (boardState.class === 'choke' || boardState.class === 'fragmented') return false;
+  // 强 setup 时不要用全清抢钥匙块体验
+  if (boardState.class === 'setup' && (boardState.nearFull?.d1 || 0) >= 1) return false;
+  const chance = policy.finisherChance ?? 0.26;
+  return chance > 0 && rng() < chance;
+}
+
 function runPipeline(board, phase, fill, maxAttempts, rng, boardState) {
   const policy = getDealPolicy(phase, boardState);
   const allowMicro = allowMicroClutch(fill, phase, rng);
@@ -163,31 +227,44 @@ function runPipeline(board, phase, fill, maxAttempts, rng, boardState) {
     fill > 0.02 &&
     fill <= policy.earlyClearFillMax;
 
-  const onAssistBeat =
-    dealSession.assistStreakLeft > 0 ||
-    dealSession.traysSinceAssist + 1 >= policy.every;
-
-  const finisherBeat =
-    onAssistBeat &&
-    policy.allowFullClearSearch &&
-    fill > 0.02 &&
-    fill <= policy.finisherFillMax;
-
   const keepClearPush =
     dealSession.clearOfferPending &&
     fill >= 0.005 &&
     dealSession.clearOfferRounds < policy.clearRetryMax;
 
-  // 碎片/窒息：beat 只助清，不硬搜全清（除非续推）
+  const pressureAssist = shouldPressureAssist(policy, boardState, rng);
+  const finisherBeat = shouldFinisherClear(policy, fill, boardState, rng);
+
+  // 碎片/窒息：只助清减占，不硬搜全清（除非续推）
   const preferAssistOnly =
     policy.boardGateOn &&
     !policy.allowFullClearSearch &&
     !keepClearPush;
 
-  const forceSpecial =
-    forceEarlyFullClear || onAssistBeat || finisherBeat || keepClearPush;
+  // —— 1) Setup 大消 payoff（优先于打卡式救济；续推清屏时让路）——
+  if (
+    !keepClearPush &&
+    fill > 0.1 &&
+    fill < 0.88 &&
+    boardHasPayoffSetup(board)
+  ) {
+    const roll = payoffRollChance(policy, boardState);
+    if (roll > 0 && rng() < roll) {
+      const payoff = tryPayoffTray(board, rng);
+      if (
+        payoff &&
+        signature(payoff) !== dealSession.lastTraySig &&
+        acceptPayoffTray(board, payoff)
+      ) {
+        return emit(board, payoff, 'payoff-multi', null, false, policy);
+      }
+    }
+  }
 
-  // 1) 全清 / 续推 / 助清
+  // —— 2) 续推清屏 / 压力助清 / 收官全清 / early 强制（均非「每 4 轮必发」）——
+  const forceSpecial =
+    forceEarlyFullClear || pressureAssist || finisherBeat || keepClearPush;
+
   if (forceSpecial) {
     const offer = tryAssistClearTray(board, phase, fill, rng);
     if (offer?.pieces && signature(offer.pieces) !== dealSession.lastTraySig) {
@@ -229,12 +306,10 @@ function runPipeline(board, phase, fill, maxAttempts, rng, boardState) {
         offer.kind === 'assist' &&
         acceptSpecialTray(board, offer.pieces, fill, 'assist')
       ) {
-        // frag/choke 或 keepClear 失败后的减占
         if (!keepClearPush || preferAssistOnly || !canFull) {
           return emit(board, offer.pieces, 'assist-clear', TRAY_SIZE, true, policy);
         }
       }
-      // keepClear 且 full 失败：仍可接受 assist
       if (
         keepClearPush &&
         offer.kind === 'assist' &&
@@ -245,27 +320,12 @@ function runPipeline(board, phase, fill, maxAttempts, rng, boardState) {
     }
   }
 
-  // 2) Setup 大消 payoff（T6）
-  if (
-    !keepClearPush &&
-    fill > 0.12 &&
-    fill < 0.85 &&
-    policy.payoffChance > 0 &&
-    boardHasPayoffSetup(board) &&
-    rng() < policy.payoffChance
-  ) {
-    const payoff = tryPayoffTray(board, rng);
-    if (
-      payoff &&
-      signature(payoff) !== dealSession.lastTraySig &&
-      acceptPayoffTray(board, payoff)
-    ) {
-      return emit(board, payoff, 'payoff-multi', null, false, policy);
-    }
-  }
-
-  // 3) 空腔补缺
-  const cavityPhaseOk = phase === 'early' || phase === 'mid' || boardState.class === 'fragmented';
+  // —— 3) 空腔补缺（盘碎时）——
+  const cavityPhaseOk =
+    phase === 'early' ||
+    phase === 'mid' ||
+    boardState.class === 'fragmented' ||
+    boardState.class === 'choke';
   if (
     !keepClearPush &&
     cavityPhaseOk &&
@@ -424,6 +484,8 @@ export function generateTray(grid, opts = {}) {
   const score = Number.isFinite(opts.score) ? Math.max(0, Number(opts.score)) : 0;
   const basePhase = basePhaseFromScore(score, t);
   const boardState = classifyBoardState(board);
+  const trayN = getActiveTraySize();
+  const trueRandom = isDealTrueRandom();
 
   const phaseFlag = t.DEAL_PHASE_ENABLED ?? DEAL_PHASE_ENABLED;
   const phaseOn =
@@ -450,6 +512,34 @@ export function generateTray(grid, opts = {}) {
   };
 
   const rng = opts.rng || Math.random;
+
+  // —— E3 真随机 / E2 tray1 短路径（乐趣核实验）——
+  if (trueRandom || trayN === 1) {
+    const pieces = [];
+    for (let i = 0; i < trayN; i++) {
+      pieces.push(makePiece(pickWeightedForm(rng)));
+    }
+    const mode = trueRandom
+      ? trayN === 1
+        ? 'debug-e2e3-random1'
+        : 'debug-e3-random'
+      : 'debug-e2-tray1';
+    // tray1 非真随机：仍尽量可放（否则实验过虐）
+    if (!trueRandom && trayN === 1) {
+      let form = null;
+      for (let a = 0; a < 80; a++) {
+        const f = pickWeightedForm(rng);
+        if (canPlaceOnCells(board, f.matrix)) {
+          form = f;
+          break;
+        }
+      }
+      pieces[0] = makePiece(form || pickWeightedForm(rng));
+    }
+    lastDealMeta.mode = mode;
+    lastDealMeta.orderGuarantee = false;
+    return emit(board, pieces, mode, null, false);
+  }
 
   if (!FIT_GUARANTEE) {
     const tray = sampleWeightedTray(rng);

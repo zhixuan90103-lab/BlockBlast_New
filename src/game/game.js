@@ -149,6 +149,7 @@ export function createGame(opts) {
 
   function fillTray() {
     const next = generateTray(grid, { score: scoreState.score });
+    // 槽位布局仍为 3 列；E2 tray1 时仅填前 n 槽，其余 null
     tray = next.slice(0, 3);
     while (tray.length < 3) tray.push(null);
   }
@@ -692,6 +693,8 @@ export function createGame(opts) {
   }
 
   function onPointerDown(e) {
+    // 只响应主指针：忽略第二指 / 多指，避免双点触控搅局
+    if (e.isPrimary === false) return;
     if (gameOver || deathFx || isLocked() || drag) return;
     if (e.button != null && e.button !== 0) return;
 

@@ -1,7 +1,13 @@
 /**
  * 棋盘 / tray 几何（参数来自 tune，默认对齐正版竖屏）。
+ *
+ * 摆放区高度滑条：只改区外框 h，不改棋盘尺寸、不改区中心位置。
  */
-import { GRID, TRAY_SIZE } from './defaults.js';
+import {
+  GRID,
+  LAYOUT_TRAY_BAND_CELLS as DEFAULT_TRAY_BAND_CELLS,
+  TRAY_SIZE,
+} from './defaults.js';
 import { getTune } from './tune.js';
 
 /**
@@ -26,10 +32,12 @@ export function computeLayout(frame, safe) {
 
   const scale = t.FEEL_TRAY_SCALE;
   const gapCells = t.LAYOUT_GAP_GRID_TRAY_CELLS;
-  const bandCells = t.LAYOUT_TRAY_BAND_CELLS;
-  // tray 点击区为正方形边长 ≈ usableW/3 → 约 GRID/3 个 board cell 高
-  const traySquareCells = Math.max(bandCells * scale, GRID / TRAY_SIZE);
-  const trayStackCells = gapCells + traySquareCells;
+  /**
+   * 棋盘占位只用「出厂」区高，与滑条解耦——
+   * 否则调高度会连带缩放棋盘，整块布局上下跳。
+   */
+  const packBandCells = Math.max(0.8, DEFAULT_TRAY_BAND_CELLS);
+  const trayStackCells = gapCells + packBandCells * scale;
 
   const maxByW = usableW;
   const maxByH = usableH / (1 + trayStackCells / GRID);
@@ -43,13 +51,24 @@ export function computeLayout(frame, safe) {
   const gridX = padL + (usableW - boardSide) / 2;
   const gridY = padT + fh * t.LAYOUT_BOARD_SHIFT_Y;
 
-  const trayY = gridY + boardSide + gap + fh * t.LAYOUT_TRAY_SHIFT_Y;
   const trayX = padL;
   const trayW = usableW;
-  // 三等分列宽；点击区为正方形（边长 = 列宽）
+  // 水平：三等分；垂直：高度随滑条，中心位置固定
   const colW = usableW / TRAY_SIZE;
-  const zoneSide = colW;
-  const trayH = Math.max(zoneSide, trayCell * bandCells, trayCell * 2.5);
+  const zoneW = colW;
+  /** 视觉/点击高度（滑条） */
+  const bandCells = Math.max(0.8, t.LAYOUT_TRAY_BAND_CELLS);
+  const zoneH = Math.max(trayCell * 1.2, trayCell * bandCells);
+  const trayH = zoneH;
+
+  /**
+   * 锚点 = 盘底 + 间距 + 出厂半高 + 偏移。
+   * 滑条改 zoneH 时绕该中心上下对称伸缩，块中心 (cx,cy) 不动。
+   */
+  const packBandH = trayCell * packBandCells;
+  const trayAnchorCy =
+    gridY + boardSide + gap + fh * t.LAYOUT_TRAY_SHIFT_Y + packBandH * 0.5;
+  const trayY = trayAnchorCy - zoneH * 0.5;
 
   const boardCellInset = t.BOARD_CELL_INSET;
   const trayCellInset = t.TRAY_CELL_INSET;
@@ -61,17 +80,16 @@ export function computeLayout(frame, safe) {
   /** @type {{ index: number, x: number, y: number, w: number, h: number, cx: number, cy: number }[]} */
   const traySlots = [];
   for (let i = 0; i < TRAY_SIZE; i++) {
-    // 列内水平居中；垂直贴 tray 带顶（与盘间距之后）
-    const x = trayX + i * colW + (colW - zoneSide) / 2;
-    const y = trayY + Math.max(0, (trayH - zoneSide) / 2);
+    const x = trayX + i * colW;
+    const y = trayY;
     traySlots.push({
       index: i,
       x,
       y,
-      w: zoneSide,
-      h: zoneSide,
-      cx: x + zoneSide / 2,
-      cy: y + zoneSide / 2,
+      w: zoneW,
+      h: zoneH,
+      cx: x + zoneW / 2,
+      cy: trayAnchorCy,
     });
   }
 

@@ -158,9 +158,13 @@ export function prefersCavity(boardClass) {
   return boardClass === 'fragmented' || boardClass === 'choke';
 }
 
-/** payoff 门控：setup 或足够 setupScore */
+/** payoff 门控：setup / 近满线 / 足够 setupScore（成全「就差那一块」） */
 export function allowsPayoffIntent(state) {
   if (!state) return false;
+  if (state.fill < 0.1 || state.fill >= 0.88) return false;
   if (state.class === 'setup') return true;
-  return state.setupScore >= 3 && state.fill >= 0.12 && state.fill < 0.85;
+  if (state.setupScore >= 2.5) return true;
+  const nf = state.nearFull;
+  if (nf && (nf.d1 >= 1 || nf.score >= 2)) return true;
+  return false;
 }

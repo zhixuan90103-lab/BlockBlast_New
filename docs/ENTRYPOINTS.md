@@ -24,17 +24,20 @@
 index.html
   ├─ src/style.css
   └─ src/main.js
+        ├─ installTouchHygiene()                       ← touch-hygiene.js（禁多指/双击缩放等）
         ├─ applyNativeClass() / applyShellLayout()     ← viewport.js
         ├─ createRenderer({ container: #stage })       ← create-renderer.js
         │     └─ three/webgpu WebGPURenderer
         ├─ createNativeHaptics()                       ← native-haptics.js
         ├─ createGame({ stage, hud, renderer, haptics })  ← game/game.js
-        │     ├─ grid / deal / score / view
+        │     ├─ grid / deal / score / view / layout
         │     ├─ feel/drag-session · ghost-policy · haptics-ghost
+        │     ├─ 仅 isPrimary 指针拖块
         │     ├─ clearFx 消行编排（缩转 + 触发震动）
         │     └─ deathFx 死亡演出 → game-over overlay
         ├─ createFeelPanel({ onChange → game.applyTune })
-        │     └─ 手感1/2 ← feel-presets.js（默认手感1）
+        │     ├─ 右上角设置齿轮
+        │     └─ 面板内手感1/2 ← feel-presets.js（默认手感1）+ 滑条
         └─ bindShellResize / scheduleStableLayout
 ```
 
@@ -52,7 +55,7 @@ index.html
     #hud                ← 分数等安全区 UI（不含全屏结算）
     .death-flash[data-death-flash]   ← 死亡开场闪红（盖 stage+hud）
     .game-over[data-game-over]       ← 全屏半透结算 + Play Again
-    #feel-panel         ← 左下手感预设 + 右下调参（动态挂载）
+    #feel-panel         ← 右上角设置 + 底部 sheet（动态挂载）
 ```
 
 | 选择器 / data | 谁写入 | 谁读取 |
@@ -65,7 +68,9 @@ index.html
 | `[data-game-over]` | `game.js` setGameOver | 可见性 / 锁输入 |
 | `[data-final-score]` | `game.js` startDeathFx | 展示本局分 |
 | `[data-restart]` | 用户点击 | `game.js` restart |
-| `#feel-panel` | `createFeelPanel` | 指针 stopPropagation |
+| `#feel-panel` | `createFeelPanel` | 设置齿轮 · 手感1/2 · 滑条；指针 stopPropagation |
+| `.feel-panel-fab` | 设置入口（右上角） | 展开/收起 sheet |
+| `.feel-preset-bar` | 面板内手感1/2 | 点击切换 · 长按存槽 |
 | `body.native-app` | `applyNativeClass` | CSS 真机规则 |
 
 **注意：** death-flash / game-over **不要**塞回 `#hud`，否则安全区内边距与「全屏盖住盘面」会冲突。
@@ -80,9 +85,13 @@ Xcode Run
   → Main.storyboard → BridgeViewController (CAPBridgeViewController)
        → capacitorDidLoad
             → registerPluginInstance(NativeHapticsPlugin)
+            → hardenWebViewTouches()   ← 关 pinch / 双击 zoom / 长按 / 滚动弹性
+       → viewDidAppear → 再 harden 一次（手势晚挂）
        → 加载 App/public/index.html（= dist 同步结果）
             → 同上 Web 启动链
 ```
+
+真机 Swift 真源：`plugins/native-haptics/BridgeViewController.swift`（bootstrap 复制进 `ios/`）。
 
 插件方法名（JS ↔ Swift）：
 
@@ -105,6 +114,9 @@ Xcode Run
 | 设计分辨率 / 桌面 safe 模拟 | `src/viewport.js` **且** `src/style.css` |
 | 启动页文案 / HUD / 死亡与结算结构 | `index.html` + `style.css` |
 | 震动原生实现 | `plugins/native-haptics/NativeHapticsPlugin.swift` 后 bootstrap |
+| WKWebView 触控硬化 | `plugins/native-haptics/BridgeViewController.swift` 后 bootstrap |
+| 触控卫生（Web） | `src/touch-hygiene.js`（`main.js` 启动时安装） |
+| tray / 棋盘几何 | `src/game/layout.js` + `defaults.js` 布局常量 |
 | App Icon | `assets/icon-1024.png` → 同步 iOS `AppIcon` 资源 |
 | 忽略规则 | `.gitignore` |
 

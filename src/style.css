@@ -48,7 +48,23 @@ body {
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
+  -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* 游戏壳：禁止系统长按放大镜 / 选择 / 拖拽图片 */
+#letterbox,
+#phone-frame,
+#stage,
+#stage canvas,
+#hud {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  user-drag: none;
 }
 
 /* —— Desktop letterbox: contain 393:852 phone frame —— */
@@ -496,7 +512,7 @@ button:active {
   color: #cbd5e1;
 }
 
-/* —— 手机调参面板 —— */
+/* —— 设置：右上角入口 + 底部面板 —— */
 .feel-panel {
   position: absolute;
   inset: 0;
@@ -504,81 +520,59 @@ button:active {
   pointer-events: none;
 }
 
-/* 左下角：手感1 / 手感2 快捷切换 */
-.feel-preset-bar {
+/* 右上角设置按钮（避开状态栏 / Dynamic Island） */
+.feel-panel-fab {
   pointer-events: auto;
   position: absolute;
-  left: max(10px, env(safe-area-inset-left, 0px));
-  bottom: max(12px, calc(env(safe-area-inset-bottom, 0px) + 8px));
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  z-index: 2;
-}
-
-.feel-preset-btn {
-  appearance: none;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 999px;
-  min-width: 72px;
-  min-height: 40px;
-  padding: 8px 14px;
+  top: max(10px, calc(var(--safe-top, 0px) + var(--ui-pad-top, 8px)));
+  right: max(10px, calc(var(--safe-right, 0px) + 8px));
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 50%;
   background: rgba(42, 36, 88, 0.88);
   color: #ffffff;
-  font-size: 13px;
-  font-weight: 700;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.32);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   cursor: pointer;
   touch-action: manipulation;
   transition: background 0.15s ease, transform 0.1s ease, border-color 0.15s ease;
 }
 
-.feel-preset-btn:active {
-  transform: scale(0.96);
-}
-
-.feel-preset-btn.is-active {
-  background: linear-gradient(180deg, #7c6cf0, #5b4bc4);
-  border-color: rgba(255, 213, 74, 0.55);
-  box-shadow: 0 0 0 1px rgba(255, 213, 74, 0.25), 0 4px 14px rgba(0, 0, 0, 0.35);
-}
-
-.feel-preset-btn.is-saved {
-  background: linear-gradient(180deg, #3dd68c, #1faa63);
-  border-color: rgba(255, 255, 255, 0.35);
-}
-
-.feel-panel.is-open .feel-preset-bar {
-  /* 面板展开时抬高，避免被 sheet 挡住 */
-  bottom: max(12px, calc(env(safe-area-inset-bottom, 0px) + min(72%, 560px) + 10px));
-}
-
-.feel-panel-fab {
-  pointer-events: auto;
-  position: absolute;
-  right: max(10px, env(safe-area-inset-right, 0px));
-  bottom: max(12px, calc(env(safe-area-inset-bottom, 0px) + 8px));
-  min-width: 52px;
-  min-height: 44px;
-  padding: 10px 14px;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(42, 36, 88, 0.92);
-  color: #ffffff;
-  font-size: 14px;
-  font-weight: 700;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  cursor: pointer;
-  touch-action: manipulation;
+.feel-panel-fab-icon {
+  display: block;
+  pointer-events: none;
 }
 
 .feel-panel-fab:active {
-  transform: scale(0.96);
+  transform: scale(0.94);
   background: rgba(58, 48, 120, 0.95);
+}
+
+.feel-panel-fab.is-open {
+  background: linear-gradient(180deg, #7c6cf0, #5b4bc4);
+  border-color: rgba(255, 213, 74, 0.45);
+}
+
+.feel-panel-scrim {
+  pointer-events: auto;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: rgba(10, 8, 28, 0.42);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .feel-panel-sheet {
@@ -587,10 +581,11 @@ button:active {
   left: 0;
   right: 0;
   bottom: 0;
-  max-height: min(72%, 560px);
+  z-index: 2;
+  max-height: min(78%, 620px);
   display: flex;
   flex-direction: column;
-  background: rgba(30, 26, 70, 0.97);
+  background: rgba(30, 26, 70, 0.98);
   border-radius: 18px 18px 0 0;
   box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.45);
   border-top: 1px solid rgba(123, 111, 224, 0.4);
@@ -636,6 +631,65 @@ button:active {
 .feel-panel-btn-primary {
   background: linear-gradient(180deg, #ff9f43, #e85d04);
   color: #ffffff;
+}
+
+/* 面板内手感预设区 */
+.feel-preset-bar {
+  flex: 0 0 auto;
+  padding: 12px 14px 6px;
+  border-bottom: 1px solid rgba(255, 248, 231, 0.06);
+}
+
+.feel-preset-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 248, 231, 0.55);
+  margin-bottom: 8px;
+}
+
+.feel-preset-row {
+  display: flex;
+  gap: 10px;
+}
+
+.feel-preset-btn {
+  appearance: none;
+  flex: 1 1 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 12px;
+  min-height: 44px;
+  padding: 10px 12px;
+  background: rgba(42, 36, 88, 0.88);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background 0.15s ease, transform 0.1s ease, border-color 0.15s ease;
+}
+
+.feel-preset-btn:active {
+  transform: scale(0.98);
+}
+
+.feel-preset-btn.is-active {
+  background: linear-gradient(180deg, #7c6cf0, #5b4bc4);
+  border-color: rgba(255, 213, 74, 0.55);
+  box-shadow: 0 0 0 1px rgba(255, 213, 74, 0.25);
+}
+
+.feel-preset-btn.is-saved {
+  background: linear-gradient(180deg, #3dd68c, #1faa63);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.feel-preset-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgba(255, 248, 231, 0.42);
 }
 
 .feel-panel-body {
@@ -695,10 +749,7 @@ button:active {
   touch-action: none;
 }
 
-.feel-panel.is-collapsed .feel-panel-sheet {
-  display: none;
-}
-
-.feel-panel.is-open .feel-panel-fab {
+.feel-panel.is-collapsed .feel-panel-sheet,
+.feel-panel.is-collapsed .feel-panel-scrim {
   display: none;
 }

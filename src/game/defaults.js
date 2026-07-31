@@ -119,22 +119,34 @@ export const DEAL_MID_CLEAR_CHANCE = 0.04;
 /** late 清屏最稀 */
 export const DEAL_LATE_CLEAR_CHANCE = 0.03;
 /**
- * early 助清/全清 beat 更勤；mid/late 用更大间隔（pipeline 按阶段读）。
+ * 【已弃用日历助清】旧「每 N tray 打卡救济」。
+ * `DEAL_ASSIST_USE_INTERVAL=false` 时 pipeline **忽略** every，改看盘面。
+ * 调参若仍滑动 every，仅在重新打开间隔模式时生效。
  */
-export const DEAL_CLEAR_ASSIST_EVERY = 4;
-export const DEAL_CLEAR_ASSIST_EVERY_EARLY = 3;
-export const DEAL_CLEAR_ASSIST_EVERY_MID = 6;
-export const DEAL_CLEAR_ASSIST_EVERY_LATE = 7;
+export const DEAL_ASSIST_USE_INTERVAL = false;
+export const DEAL_CLEAR_ASSIST_EVERY = 99;
+export const DEAL_CLEAR_ASSIST_EVERY_EARLY = 99;
+export const DEAL_CLEAR_ASSIST_EVERY_MID = 99;
+export const DEAL_CLEAR_ASSIST_EVERY_LATE = 99;
 /** 偶发助清成功后最多再连 1 次，不连刷 */
 export const DEAL_CLEAR_ASSIST_STREAK = 1;
+/**
+ * 局面助清（窒息/碎片）：看盘 roll，非固定轮数。
+ * choke 更高、fragmented 略低；两次助清间至少隔 DEAL_ASSIST_MIN_GAP 盘（streak 续推除外）。
+ */
+export const DEAL_PRESSURE_ASSIST_CHANCE_CHOKE = 0.52;
+export const DEAL_PRESSURE_ASSIST_CHANCE_FRAG = 0.36;
+/** 两次压力助清之间最少间隔的「未助清 tray」数 */
+export const DEAL_ASSIST_MIN_GAP = 2;
 /** 助清/全清搜索允许的最高填充率 */
 export const DEAL_CLEAR_ASSIST_FILL_MAX = 0.82;
 /** 助清：三步后至少减少的占格数（或清空） */
 export const DEAL_CLEAR_ASSIST_MIN_DROP = 5;
 /**
- * fill 很低时收官强搜全清的上限。
+ * fill 很低时收官强搜全清的上限 + 概率（彩蛋，非主循环）。
  */
-export const DEAL_CLEAR_FINISHER_FILL_MAX = 0.2;
+export const DEAL_CLEAR_FINISHER_FILL_MAX = 0.22;
+export const DEAL_FINISHER_CHANCE = 0.26;
 /**
  * early 是否「每 tray 强制全清」——关闭，改为偶发。
  */
@@ -146,14 +158,18 @@ export const DEAL_CAVITY_GUIDE_CHANCE = 0.12;
 export const DEAL_CAVITY_GUIDE_CHANCE_EARLY = 0.16;
 export const DEAL_CAVITY_GUIDE_CHANCE_MID = 0.08;
 /**
- * Setup 大消 payoff：early 高（大范围消除），mid 低（少量）。
+ * Setup 大消 payoff（T6「就差那一块」）：默认高于旧值；
+ * 近满线多时 pipeline 还会再抬概率。
  */
-export const DEAL_PAYOFF_CHANCE = 0.2;
-export const DEAL_PAYOFF_CHANCE_EARLY = 0.3;
-export const DEAL_PAYOFF_CHANCE_MID = 0.14;
-export const DEAL_PAYOFF_CHANCE_LATE = 0.1;
+export const DEAL_PAYOFF_CHANCE = 0.32;
+export const DEAL_PAYOFF_CHANCE_EARLY = 0.4;
+export const DEAL_PAYOFF_CHANCE_MID = 0.34;
+export const DEAL_PAYOFF_CHANCE_LATE = 0.24;
 /** payoff 至少造成几条线（行+列合计）才算钥匙 */
 export const DEAL_PAYOFF_MIN_LINES = 2;
+/** 近满差 1 的线 ≥ 此数时，强制高概率尝试钥匙块 */
+export const DEAL_PAYOFF_NEAR_D1_FORCE = 2;
+export const DEAL_PAYOFF_NEAR_FORCE_CHANCE = 0.88;
 /**
  * 已推送「清屏向」tray 但玩家未盘空时，连续再推清屏向的最多次数（含首次）。
  * 超过后恢复普通发块，避免无限奶。
@@ -229,32 +245,44 @@ export const DEAL_FIT_TRAY_SCORE_MUL = 0.72;
  * - 与盘重叠够才出投影
  * 单位：board cell；Y 向下为正时 offset 为负。
  */
-/** 拿起时块中心相对槽中心的上抬（固定姿态，不跟指尖） */
+/** 拿起时块中心相对槽中心的上抬（固定姿态，不跟指尖）— 手感1 真机标定 */
 export const FEEL_DRAG_OFFSET_Y_MIN = -2.5;
-/** 大幅上移后再略抬（相对拿起姿态额外上抬量叠到 MAX） */
-export const FEEL_DRAG_OFFSET_Y_MAX = -3.1;
+/** 大幅上移后再略抬（相对拿起姿态额外上抬量叠到 MAX）— 手感1 真机标定 */
+export const FEEL_DRAG_OFFSET_Y_MAX = -4.0;
 /** 兼容旧名 */
 export const FEEL_DRAG_OFFSET_Y = FEEL_DRAG_OFFSET_Y_MAX;
 export const FEEL_DRAG_OFFSET_Y_ALT = -2.5;
 export const FEEL_DRAG_OFFSET_X = 0;
 /**
- * 自拿起点「向上」移动达到该格数时抬升到 MAX。
+ * 自拿起点「向上」移动达到该格数时抬升到 MAX。— 手感1 真机标定
  */
-export const FEEL_DRAG_LIFT_TRAVEL_CELLS = 2.2;
-/** 抬升曲线幂（真机调参） */
-export const FEEL_DRAG_LIFT_POWER = 1.5;
+export const FEEL_DRAG_LIFT_TRAVEL_CELLS = 4.5;
+/** 抬升曲线幂（真机调参）— 手感1 */
+export const FEEL_DRAG_LIFT_POWER = 1.75;
 /**
- * 触控跟手增益（借鉴 macOS 指针加速思想：慢精、快远）
- * 按「指速 cells/s」映射，积分位移，减轻大范围拖动手指行程。
+ * 触控跟手增益：积分位移 = 指尖位移 × gain。
+ * - MODE 0（手感1）：按「指速 cells/s」映射 GAIN_MIN→MAX（慢精、快远）
+ * - MODE 1（手感2）：固定倍率 GAIN_K（k=1 → 滑动距离与块位移 1:1；k>1 → 小手大块）
  */
-/** 慢速时增益（真机调参） */
+/** 0=速度映射（手感1）· 1=固定倍率（手感2） */
+export const FEEL_POINTER_GAIN_MODE = 0;
+/** 速度模式：慢速增益下限 — 手感1 */
 export const FEEL_POINTER_GAIN_MIN = 1.0;
-/** 快速时增益（真机调参） */
-export const FEEL_POINTER_GAIN_MAX = 1.75;
+/** 速度模式：快速增益上限 — 手感1 真机标定（截图 1.35） */
+export const FEEL_POINTER_GAIN_MAX = 1.35;
 /**
- * 指速参考（格/秒）：达到此速度附近增益接近 MAX。
+ * 指速参考（格/秒，仅 MODE=0）：达到此速度附近增益接近 MAX。— 手感1 真机标定
  */
-export const FEEL_POINTER_SPEED_REF = 7;
+export const FEEL_POINTER_SPEED_REF = 6;
+/**
+ * 固定跟手倍率（仅 MODE=1）：块位移 = 指尖位移 × K。
+ * 1 = 1:1；>1 小幅滑动块大范围移动。
+ */
+export const FEEL_POINTER_GAIN_K = 1.0;
+/**
+ * @deprecated 旧「距离插值增益」参考；MODE=1 已改为固定 K，保留键避免旧存档炸字段
+ */
+export const FEEL_POINTER_DIST_REF = 5;
 /** @deprecated 兼容旧名：等同快速增益 */
 export const FEEL_DRAG_FOLLOW_GAIN_MAX = FEEL_POINTER_GAIN_MAX;
 /**
@@ -345,7 +373,7 @@ export const FEEL_GHOST_EDGE_HOLD = 1.3;
  * 超过则取消投影（影不许甩块）；与 EDGE_HOLD 无关。
  * 默认 ~1：邻格内可跟，再远灭影。
  */
-export const FEEL_GHOST_MAX_LAG = 1.0;
+export const FEEL_GHOST_MAX_LAG = 1.3;
 /**
  * 指速 ≥ 参考指速 × 该系数 → 投影进入「快速精准」模式（free 吸附，不贴边 1.5）。
  * 慢下来后回到边缘粘滞。
@@ -450,14 +478,19 @@ export const LAYOUT_BOARD_SHIFT_Y = 0.035;
  * tray 相对「盘底+间距」再偏移 / frame 高（+ 下移）。
  * 真机调参：0。
  */
-export const LAYOUT_TRAY_SHIFT_Y = 0;
+export const LAYOUT_TRAY_SHIFT_Y = -0.01;
 /**
  * 棋盘底边 → tray 摆放物「顶」的间距，单位：board cell。
  * 正版约 0.8–1.2，取 1.0。
  */
 export const LAYOUT_GAP_GRID_TRAY_CELLS = 1.0;
 /** tray 内容带高度系数 × trayCell（需容纳约 3 格高形状 + 少量气口） */
-export const LAYOUT_TRAY_BAND_CELLS = 3.2;
+/**
+ * 底栏每个摆放区高度（× trayCell）。
+ * 调参时只改外框/点击高度，区中心与棋盘尺寸不动（见 layout.js）。
+ * 同时作为棋盘竖向占位的出厂参考高度。
+ */
+export const LAYOUT_TRAY_BAND_CELLS = 7;
 /** 底边额外呼吸 / frame 高（safe.bottom 另加） */
 export const LAYOUT_PAD_BOTTOM_EXTRA = 0.04;
 /** tray 单槽可容纳的最大形状边长（格数），I5=5 */
@@ -507,5 +540,16 @@ export const SHOW_DEBUG_STATUS =
   typeof location !== 'undefined' &&
   /(?:\?|&)debug=1(?:&|$)/.test(location.search || '');
 
-/** 显示底栏三等分点击区（调试用，默认关） */
+/** 显示底栏三等分摆放区（默认关） */
 export const SHOW_TRAY_ZONES = false;
+
+/**
+ * 乐趣核实验 E2：tray 同时块数（1 或 3）。默认 3=Classic。
+ * 运行时见 tune / `?e2=1`。实现读 `getActiveTraySize()`。
+ */
+export const DEBUG_TRAY_SIZE = 3;
+/**
+ * 乐趣核实验 E3：真随机发块（无 phase/助清/payoff/可放保证）。
+ * 运行时见 tune / `?e3=1`。
+ */
+export const DEBUG_DEAL_TRUE_RANDOM = false;

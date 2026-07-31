@@ -7,6 +7,8 @@
  *  late  — 更稀的释放
  */
 import {
+  DEAL_ASSIST_MIN_GAP,
+  DEAL_ASSIST_USE_INTERVAL,
   DEAL_BOARD_STATE_GATE,
   DEAL_CAVITY_GUIDE_CHANCE,
   DEAL_CAVITY_GUIDE_CHANCE_EARLY,
@@ -22,6 +24,7 @@ import {
   DEAL_EARLY_CLEAR_CHANCE,
   DEAL_EARLY_CLEAR_FILL_MAX,
   DEAL_EARLY_FORCE_FULL_CLEAR,
+  DEAL_FINISHER_CHANCE,
   DEAL_LATE_CLEAR_CHANCE,
   DEAL_MID_CLEAR_CHANCE,
   DEAL_ORDER_GUARANTEE,
@@ -30,6 +33,10 @@ import {
   DEAL_PAYOFF_CHANCE_LATE,
   DEAL_PAYOFF_CHANCE_MID,
   DEAL_PAYOFF_MIN_LINES,
+  DEAL_PAYOFF_NEAR_D1_FORCE,
+  DEAL_PAYOFF_NEAR_FORCE_CHANCE,
+  DEAL_PRESSURE_ASSIST_CHANCE_CHOKE,
+  DEAL_PRESSURE_ASSIST_CHANCE_FRAG,
 } from '../defaults.js';
 import { getTune } from '../tune.js';
 import {
@@ -55,15 +62,17 @@ function flag(v, fb) {
 function stateMul(cls) {
   switch (cls) {
     case 'empty':
-      return { clear: 1.15, payoff: 0.15, cavity: 0.05, allowFull: true };
+      // 空盘：全清彩蛋略抬，payoff 几乎不需要
+      return { clear: 1.2, payoff: 0.12, cavity: 0.05, allowFull: true };
     case 'healthy':
-      return { clear: 1.0, payoff: 0.55, cavity: 0.3, allowFull: true };
+      return { clear: 0.85, payoff: 0.7, cavity: 0.28, allowFull: true };
     case 'setup':
-      return { clear: 0.45, payoff: 1.35, cavity: 0.4, allowFull: true };
+      // 铺局中：钥匙块优先，全清压低（别抢 payoff）
+      return { clear: 0.28, payoff: 1.75, cavity: 0.35, allowFull: true };
     case 'fragmented':
-      return { clear: 0, payoff: 0.35, cavity: 1.6, allowFull: false };
+      return { clear: 0, payoff: 0.4, cavity: 1.65, allowFull: false };
     case 'choke':
-      return { clear: 0, payoff: 0.2, cavity: 1.25, allowFull: false };
+      return { clear: 0, payoff: 0.22, cavity: 1.3, allowFull: false };
     default:
       return { clear: 1, payoff: 1, cavity: 1, allowFull: true };
   }
@@ -105,13 +114,14 @@ export function getDealPolicy(phase = 'mid', boardState = null, t = getTune()) {
   const usePhaseCavity = cavityGlobal === DEAL_CAVITY_GUIDE_CHANCE;
 
   const gateOn = flag(t.DEAL_BOARD_STATE_GATE, DEAL_BOARD_STATE_GATE);
+  const useInterval = flag(t.DEAL_ASSIST_USE_INTERVAL, DEAL_ASSIST_USE_INTERVAL);
   const cls = boardState?.class || 'healthy';
   const mul = gateOn ? stateMul(cls) : { clear: 1, payoff: 1, cavity: 1, allowFull: true };
 
   let payoffChance = (usePhasePayoff ? payoffDefault : payoffGlobal) * mul.payoff;
   let cavityChance = (usePhaseCavity ? cavityDefault : cavityGlobal) * mul.cavity;
 
-  // 无 setup 时 payoff 直接关（门控开）
+  // 无 setup/近满时 payoff 直接关（门控开）
   const payoffOk = !gateOn || allowsPayoffIntent(boardState);
   if (gateOn && !payoffOk) payoffChance = 0;
 
@@ -131,10 +141,36 @@ export function getDealPolicy(phase = 'mid', boardState = null, t = getTune()) {
   const lateClearChance =
     num(t.DEAL_LATE_CLEAR_CHANCE, DEAL_LATE_CLEAR_CHANCE) * mul.clear;
 
+  const pressureAssistChance =
+    cls === 'choke'
+      ? num(t.DEAL_PRESSURE_ASSIST_CHANCE_CHOKE, DEAL_PRESSURE_ASSIST_CHANCE_CHOKE)
+      : cls === 'fragmented'
+        ? num(t.DEAL_PRESSURE_ASSIST_CHANCE_FRAG, DEAL_PRESSURE_ASSIST_CHANCE_FRAG)
+        : 0;
+
   return {
+    /** @deprecated 仅 useInterval 时使用 */
     every: Math.max(
       1,
       Math.round(usePhaseEvery ? everyDefault : everyGlobal),
+    ),
+    useInterval,
+    assistMinGap: Math.max(
+      0,
+      Math.round(num(t.DEAL_ASSIST_MIN_GAP, DEAL_ASSIST_MIN_GAP)),
+    ),
+    pressureAssistChance: Math.min(1, Math.max(0, pressureAssistChance)),
+    finisherChance: Math.min(
+      1,
+      Math.max(0, num(t.DEAL_FINISHER_CHANCE, DEAL_FINISHER_CHANCE) * mul.clear),
+    ),
+    payoffNearD1Force: Math.max(
+      1,
+      Math.round(num(t.DEAL_PAYOFF_NEAR_D1_FORCE, DEAL_PAYOFF_NEAR_D1_FORCE)),
+    ),
+    payoffNearForceChance: Math.min(
+      1,
+      Math.max(0, num(t.DEAL_PAYOFF_NEAR_FORCE_CHANCE, DEAL_PAYOFF_NEAR_FORCE_CHANCE)),
     ),
     streakMax: Math.max(
       0,
@@ -164,11 +200,8 @@ export function getDealPolicy(phase = 'mid', boardState = null, t = getTune()) {
     ),
     orderGuarantee: flag(t.DEAL_ORDER_GUARANTEE, DEAL_ORDER_GUARANTEE),
     boardClass: cls,
-    intentLabel:
-      phase === 'early'
-        ? 'big-place-big-clear-rare-allclear'
-        : phase === 'mid'
-          ? 'scarce-big-clear-scarce-allclear'
-          : 'pressure',
+    intentLabel: useInterval
+      ? 'legacy-interval-assist'
+      : 'state-assist-payoff-first',
   };
 }

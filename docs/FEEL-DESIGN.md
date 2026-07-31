@@ -1,8 +1,8 @@
 # 手感与反馈设计（问题 → 约束）
 
-迭代踩坑沉淀。实现：`src/game/feel/*` · `view.js` · `feel-presets.js` · `game.js`（clearFx / deathFx）。  
-常量真源：`defaults.js`；运行时覆盖：`tune.js` + 调参面板。  
-全景纪要：[PROJECT-HISTORY.md](./PROJECT-HISTORY.md) · 文档索引：[README.md](./README.md)。
+迭代踩坑沉淀。实现：`src/game/feel/*` · `view.js` · `layout.js` · `feel-presets.js` · `game.js`（clearFx / deathFx）。  
+常量真源：`defaults.js`；运行时覆盖：`tune.js` + **右上角设置面板**（`feel-panel.js`）。  
+全景纪要（项目笔记）：[PROJECT-HISTORY.md](./PROJECT-HISTORY.md)（§13 设置/触控/摆放区）· 索引：[README.md](./README.md)。
 
 ---
 
@@ -153,31 +153,38 @@ T1 → gap → C1 → gap → T2 → gap → C2 → gap → T3 → gap → C3
 
 | 槽 | 含义 | 出厂 |
 |----|------|------|
-| **手感1** | 游戏默认 / 当前标定 | `createDefaultTune()` ≡ `defaults.js` |
-| **手感2** | 同底 + **更弱操作幅度**（截图标定） | 仅改抬升/跟手等 FEEL_DRAG_* / POINTER_* |
+| **手感1** | 速度映射跟手 + 默认抬升 | `applyFeel1OpParams` / defaults 操作字段 |
+| **手感2** | **固定倍率 k** 跟手 + 另一套抬升 | `applyFeel2OpParams`：`GAIN_MODE=1`，`GAIN_K` |
 
-UI：左下角按钮（`feel-panel.js` + `.feel-preset-bar`）。
+UI：**右上角设置齿轮** → 底部 sheet 内含手感1/2 + 全部滑条（`feel-panel.js`）。  
+关闭后棋盘上不常驻左下/右下按钮。
 
 | 操作 | 行为 |
 |------|------|
-| 点击 | `applyFeelPreset(id)` + 高亮 |
-| 长按 ≈0.5s | 把当前 tune 存入该槽（localStorage） |
+| 点设置 | 展开/收起面板（点遮罩或「收起」亦关） |
+| 点击手感1/2 | `applyFeelPreset(id)` + 高亮 |
+| 长按手感 ≈0.5s | 把当前 tune 存入该槽（localStorage） |
 | 面板「重置」 | 切回手感1 出厂 |
 
-存储键版本：`bb_feel_preset_v3_*`（升版避免旧存档污染）。  
+存储键版本：`bb_feel_preset_v16_*`（升版避免旧存档污染）。  
 启动：`getActiveFeelPresetId()` 默认 **`'1'`**。
 
-手感2 操作差异摘要（其余同手感1，含震动/消行/发块）：
+### 两套操作参数（跟手 · 真机截图出厂）
 
-| 键 | 手感2 |
-|----|--------|
-| OFFSET_Y_MIN/MAX | -2.5 / -2.5 |
-| LIFT_TRAVEL | 1.0 |
-| LIFT_POWER | 1.0 |
-| GAIN_MIN/MAX | 0.9 / 1.6 |
-| SPEED_REF | 6.0 |
+| | 手感1 | 手感2 |
+|--|--------|--------|
+| **MODE** | **0 速度** | **1 固定倍率** |
+| 公式 | gain = smoothstep(指速/SPEED_REF) 在 MIN↔MAX | **gain = K 恒定** |
+| GAIN | MIN **1.0** · MAX **1.35** · SPEED_REF **6** | **K = 1.6** |
+| 抬升 | MIN **-2.5** · MAX **-4.0** · travel **4.5** · power **1.75** | MIN=MAX **-2.0** · travel **1** · power **1** |
+| 平滑 | SMOOTH **0.012** · GAIN_SMOOTH **0.018** | SMOOTH **0.012** · GAIN_SMOOTH **0** |
+| 主调参 | MIN / MAX / SPEED_REF / 抬升 | **GAIN_K** / 抬升 |
 
-实现：`src/game/feel-presets.js`。
+位移积分均为 `acc += fingerDelta × gain`。  
+投影快慢模（`FEEL_GHOST_FAST_*`）仍看指速，与跟手 MODE 独立。  
+震动 / 消行 / 发块：两槽出厂同源。
+
+实现：`src/game/feel-presets.js` · `feel/drag-session.js`。
 
 ---
 
@@ -272,13 +279,30 @@ flash  →  fill  →  pause  →  reveal  →  game-over visible
 
 ---
 
-## 11. 调参
+## 11. 调参与布局区
 
 - 布局 key：`LAYOUT_TUNE_KEYS` → `relayout`  
 - 其余：`setTune` + `paint`  
 - 默认：`defaults.js`；手感1 出厂同步 defaults  
 - 真机改满意后：**长按手感1** 可固化到本机槽（可选）  
-- 面板分组含：拖拽、投影、震动（投影/将消/消除 3 波）、屏震、debris、发块节奏  
+- 面板分组含：尺寸与间距、拖拽、投影、震动、屏震、debris、发块、调试  
+
+### 摆放区（tray 三槽）
+
+| 点 | 规则 |
+|----|------|
+| 宽度 | 可用宽三等分（受「棋盘左右边距」影响） |
+| **高度** | `LAYOUT_TRAY_BAND_CELLS` × trayCell；滑条 1.5–15 |
+| **高度变时位置** | **中心固定**（`layout.js` 用出厂 band 作棋盘占位与锚点；滑条不牵动棋盘缩放） |
+| 垂直偏移 | `LAYOUT_TRAY_SHIFT_Y`（相对盘底+间距；默认 **-0.01**） |
+| 区外框样式 | `SHOW_TRAY_ZONES`（默认 **关**；开则圆角槽可视化） |
+| 块大小 | `FEEL_TRAY_SCALE`（与区高独立） |
+
+### 投影关键出厂
+
+| 常量 | 默认（以 defaults 为准） |
+|------|--------------------------|
+| `FEEL_GHOST_MAX_LAG` | **1.3** 格（影-块最大切比雪夫） |
 
 ### 加大「操作幅度」优先项
 
@@ -290,20 +314,29 @@ flash  →  fill  →  pause  →  reveal  →  game-over visible
 | 加速参考指速 | 略减 → 更容易进高速增益 |
 | 拖拽平滑 | 略减 → 更跟手 |
 
+### 触控干扰（非手感参数，但影响操作）
+
+- Web：`touch-hygiene.js` — 多指 / 双击缩放 / contextmenu / 非主指针  
+- 游戏：`pointerdown` 仅 `isPrimary`  
+- iOS：`BridgeViewController.hardenWebViewTouches`  
+
 ---
 
 ## 12. 相关文件速查
 
 ```
-src/game/defaults.js          # 常量真源（含 CLEAR_*/DEATH_*/HAPTIC_*）
+src/game/defaults.js          # 常量真源（含 CLEAR_*/DEATH_*/HAPTIC_*/LAYOUT_*）
 src/game/tune.js              # 运行时 + TUNE_FIELDS
+src/game/layout.js            # 棋盘 / tray 几何（区高中心固定）
 src/game/feel-presets.js      # 手感1/2
 src/game/feel/haptics-ghost.js
 src/game/feel/ghost-policy.js
 src/game/feel/drag-session.js
-src/game/view.js              # boardCells/Fills · debris · shake · clear 动画
-src/game/game.js              # clearFx · deathFx · collectLineCells
-src/feel-panel.js
-src/style.css                 # .feel-preset-bar · .death-flash · .game-over
-index.html                    # data-death-flash · data-game-over
+src/game/view.js              # boardCells/Fills · debris · shake · tray zones
+src/game/game.js              # clearFx · deathFx · 主指针拖块
+src/feel-panel.js             # 右上角设置 + 面板
+src/touch-hygiene.js
+src/style.css                 # .feel-panel-* · .death-flash · .game-over
+index.html                    # data-death-flash · data-game-over · viewport
+plugins/native-haptics/BridgeViewController.swift
 ```

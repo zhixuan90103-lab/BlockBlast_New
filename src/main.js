@@ -7,6 +7,7 @@ import { createRenderer } from './create-renderer.js';
 import { createFeelPanel } from './feel-panel.js';
 import { createGame } from './game/game.js';
 import { createNativeHaptics } from './native-haptics.js';
+import { installTouchHygiene } from './touch-hygiene.js';
 import {
   applyNativeClass,
   applySafeAreaCssVars,
@@ -23,6 +24,7 @@ function setStatus(text) {
 }
 
 async function boot() {
+  installTouchHygiene();
   applyNativeClass();
   applyShellLayout();
   applySafeAreaCssVars();
